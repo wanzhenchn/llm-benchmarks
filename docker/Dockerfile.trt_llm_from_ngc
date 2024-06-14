@@ -1,0 +1,23 @@
+ARG BASE_IMAGE=nvcr.io/nvidia/tritonserver
+ARG BASE_TAG=24.04-trtllm-python-py3
+FROM ${BASE_IMAGE}:${BASE_TAG}
+
+ARG TRTLLM_VER=v0.9.0
+
+RUN apt update && apt-get -y install git
+RUN git lfs install
+RUN mkdir -p ~/.pip && echo -e "[global]\nno-cache-dir = true" > ~/.pip/pip.conf
+
+RUN python3 -m pip install sentencepiece~=0.1.99 rouge_score~=0.1.2 datasets==2.14.6 --extra-index-url https://pypi.nvidia.com
+
+WORKDIR /app
+
+RUN git clone https://github.com/triton-inference-server/tensorrtllm_backend.git && \
+    cd tensorrtllm_backend && git checkout ${TRTLLM_VER} && git submodule update --init --recursive && \
+    mv scripts .. && mv tools .. && \
+    cp -r all_models/inflight_batcher_llm ../triton_model_repo_template && \
+    mkdir -p ../tensorrt_llm && \
+    cd tensorrt_llm && mv benchmarks examples ../../tensorrt_llm && \
+    cd ../../ && rm -rf tensorrtllm_backend
+
+WORKDIR /workspace

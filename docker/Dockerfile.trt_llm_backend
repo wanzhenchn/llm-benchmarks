@@ -1,0 +1,108 @@
+ARG BASE_IMAGE=nvcr.io/nvidia/tritonserver
+ARG BASE_TAG=24.04-py3
+
+FROM ${BASE_IMAGE}:${BASE_TAG} as base
+
+RUN apt-get update && apt-get install -y --no-install-recommends rapidjson-dev python-is-python3 ccache git-lfs
+RUN mkdir -p ~/.pip && echo -e "[global]\nno-cache-dir = true" > ~/.pip/pip.conf
+
+COPY requirements.txt /tmp/
+RUN pip3 install -r /tmp/requirements.txt --extra-index-url https://pypi.ngc.nvidia.com
+
+# Remove previous TRT installation
+# We didn't remove libnvinfer* here because tritonserver depends on the pre-installed libraries.
+RUN apt-get remove --purge -y tensorrt*
+RUN pip uninstall -y tensorrt
+
+FROM base as dev
+
+# Download & install internal TRT release
+COPY tensorrt_llm/docker/common/install_tensorrt.sh /tmp/
+RUN bash /tmp/install_tensorrt.sh && rm /tmp/install_tensorrt.sh
+ENV LD_LIBRARY_PATH=/usr/local/tensorrt/lib:${LD_LIBRARY_PATH}
+ENV TRT_ROOT=/usr/local/tensorrt
+
+# Install latest Polygraphy
+COPY tensorrt_llm/docker/common/install_polygraphy.sh /tmp/
+RUN bash /tmp/install_polygraphy.sh && rm /tmp/install_polygraphy.sh
+
+# CMake
+COPY tensorrt_llm/docker/common/install_cmake.sh /tmp/
+RUN bash /tmp/install_cmake.sh && rm /tmp/install_cmake.sh
+ENV PATH="/usr/local/cmake/bin:${PATH}"
+
+# Install mpi4py
+COPY tensorrt_llm/docker/common/install_mpi4py.sh /tmp/
+RUN bash /tmp/install_mpi4py.sh && rm /tmp/install_mpi4py.sh
+
+# Use "pypi" (default) for x86_64 arch and "src_non_cxx11_abi" for aarch64 arch
+ARG TORCH_INSTALL_TYPE="pypi"
+COPY tensorrt_llm/docker/common/install_pytorch.sh install_pytorch.sh
+RUN bash ./install_pytorch.sh $TORCH_INSTALL_TYPE && rm install_pytorch.sh
+
+FROM dev as trt_llm_builder
+
+WORKDIR /src
+COPY scripts scripts
+COPY tools tools
+COPY all_models/inflight_batcher_llm triton_model_repo
+COPY tensorrt_llm tensorrt_llm
+ARG BUILD_WHEEL_ARGS="--clean --trt_root ${TRT_ROOT} --python_bindings --benchmarks"
+RUN cd tensorrt_llm && python3 scripts/build_wheel.py ${BUILD_WHEEL_ARGS} && cd ..
+
+FROM trt_llm_builder as trt_llm_backend_builder
+
+WORKDIR /src/
+COPY inflight_batcher_llm inflight_batcher_llm
+RUN cd inflight_batcher_llm && bash scripts/build.sh && cd ..
+
+FROM trt_llm_backend_builder as final
+
+# Install TensorRT-LLM
+WORKDIR /app/tensorrt_llm
+ARG SRC_DIR=/src/tensorrt_llm
+COPY --from=trt_llm_builder ${SRC_DIR}/build/*.whl .
+RUN pip3 install *.whl --extra-index-url https://pypi.nvidia.com && rm *.whl
+COPY --from=trt_llm_builder ${SRC_DIR}/cpp/include include
+RUN ln -sv $(python3 -c 'import site; print(f"{site.getsitepackages()[0]}/tensorrt_llm/bin")') bin && \
+    test -f bin/executorWorker && \
+    ln -sv $(python3 -c 'import site; print(f"{site.getsitepackages()[0]}/tensorrt_llm/libs")') lib && \
+    test -f lib/libnvinfer_plugin_tensorrt_llm.so && \
+    ln -sv lib/libnvinfer_plugin_tensorrt_llm.so lib/libnvinfer_plugin_tensorrt_llm.so.9 && \
+    echo "/app/tensorrt_llm/lib" > /etc/ld.so.conf.d/tensorrt_llm.conf && \
+    ldconfig
+COPY --from=trt_llm_builder ${SRC_DIR}/benchmarks benchmarks
+ARG CPP_BUILD_DIR=${SRC_DIR}/cpp/build
+COPY --from=trt_llm_builder \
+     ${CPP_BUILD_DIR}/benchmarks/bertBenchmark \
+     ${CPP_BUILD_DIR}/benchmarks/gptManagerBenchmark \
+     ${CPP_BUILD_DIR}/benchmarks/gptSessionBenchmark \
+     benchmarks/cpp/
+COPY --from=trt_llm_builder ${SRC_DIR}/docs docs
+COPY --from=trt_llm_builder ${SRC_DIR}/examples examples
+RUN chmod -R a+w examples && \
+    rm -v \
+      benchmarks/cpp/bertBenchmark.cpp \
+      benchmarks/cpp/gptManagerBenchmark.cpp \
+      benchmarks/cpp/gptSessionBenchmark.cpp \
+      benchmarks/cpp/CMakeLists.txt
+WORKDIR /app
+COPY --from=trt_llm_builder /src/tools tools
+COPY --from=trt_llm_builder /src/scripts scripts
+COPY --from=trt_llm_builder /src/triton_model_repo triton_model_repo_template
+ARG GIT_COMMIT
+ARG TRT_LLM_VER
+ENV TRT_LLM_GIT_COMMIT=${GIT_COMMIT} TRT_LLM_VERSION=${TRT_LLM_VER}
+
+# Install TensorRT-LLM backend
+ARG BACKEND_DIR=/opt/tritonserver/backends/tensorrtllm
+RUN mkdir ${BACKEND_DIR}
+ENV LD_LIBRARY_PATH=${BACKEND_DIR}:${LD_LIBRARY_PATH}
+ARG INFLIGHT_BUILD_DIR=/src/inflight_batcher_llm/build
+COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/libtriton_tensorrtllm.so ${BACKEND_DIR}
+COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/libtriton_tensorrtllm_common.so ${BACKEND_DIR}
+COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/trtllmExecutorWorker ${BACKEND_DIR}
+
+# Delete files
+RUN rm -rf /src  && cd /opt/tritonserver/backends && \
+    rm -rf identity/ fil/ dali/ openvino/ repeat/ square/ tensorflow/
