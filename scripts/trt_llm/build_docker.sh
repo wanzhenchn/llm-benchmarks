@@ -20,18 +20,20 @@ fi
 
 if [ $1 = all ] || [ $1 = trtllm_src ]; then
   if [ ! -d tensorrtllm_backend ]; then
-    git clone --recurse-submodules https://github.com/triton-inference-server/tensorrtllm_backend.git
+    git clone --recurse-submodules https://github.com/wanzhenchn/tensorrtllm_backend.git
   fi
-  cd tensorrtllm_backend
+  cd tensorrtllm_backend && git checkout dev
 
   CUDA_ARCHS="80-real;89-real;90-real"
   GIT_COMMIT=$(git rev-parse HEAD)
   TRT_LLM_VERSION=$(grep '^__version__' tensorrt_llm/tensorrt_llm/version.py | grep -o '=.*' | tr -d '= "')
   BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --python_bindings --benchmarks --cuda_architectures ${CUDA_ARCHS}"
-  IMAGE_TAG=wanzhencn/tensorrt-llm:${TRT_LLM_VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
+#  IMAGE_TAG=wanzhencn/tensorrt-llm:${TRT_LLM_VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:${TRT_LLM_VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
 else
   TRT_LLM_VERSION=v0.9.0
-  IMAGE_TAG=wanzhencn/-tensorrt-llm:${TRT_LLM_VERSION}
+#  IMAGE_TAG=wanzhencn/-tensorrt-llm:${TRT_LLM_VERSION}
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:${TRT_LLM_VERSION}
 
 fi
 
@@ -74,4 +76,4 @@ else
   exit
 fi
 
-# docker push $IMAGE_TAG
+docker push $IMAGE_TAG
