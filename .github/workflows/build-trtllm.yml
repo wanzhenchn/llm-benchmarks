@@ -17,7 +17,7 @@
 # 4. Change the values for the REGION_ID, REGISTRY, NAMESPACE, IMAGE, ACK_CLUSTER_ID, and ACK_DEPLOYMENT_NAME.
 #
 
-name: Build and Push to ACR
+name: Build_TRTLLM_Image
 
 on:
   workflow_dispatch:
@@ -43,5 +43,5 @@ jobs:
         docker version
         docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
 
-        cd llm-benchmarks
-        bash scripts/trt_llm/build_docker.sh src
+        ls
+        bash scripts/trt_llm/build_docker.sh all

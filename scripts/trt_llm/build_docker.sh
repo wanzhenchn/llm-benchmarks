@@ -72,7 +72,7 @@ elif [ $1 = trtllm_pip ]; then
   docker build -t ${IMAGE_TAG} -f docker/Dockerfile.trt_llm_from_pip .
 
 else
-  echo "Installation type only supports all, src or pip"
+  echo "Installation type only supports ngc, all, trtllm_src or trtllm_pip"
   exit
 fi
 
