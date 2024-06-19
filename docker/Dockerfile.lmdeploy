@@ -1,20 +1,20 @@
 FROM nvcr.io/nvidia/tritonserver:22.12-py3
 
 RUN rm /etc/apt/sources.list.d/cuda*.list && apt-get update && apt-get install -y --no-install-recommends \
-    rapidjson-dev libgoogle-glog-dev gdb  \
-    && rm -rf /var/lib/apt/lists/*
+    rapidjson-dev libgoogle-glog-dev gdb python3.8-venv \
+    && rm -rf /var/lib/apt/lists/* && cd /opt && python3 -m venv py38
 
-RUN python3 -m pip install --no-cache-dir torch==1.13.1+cu117 torchvision==0.14.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
-RUN python3 -m pip install --no-cache-dir cmake packaging
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools==69.5.1 && \
+    python3 -m pip install --no-cache-dir torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118 && \
+    python3 -m pip install --no-cache-dir cmake packaging wheel
 
 ENV NCCL_LAUNCH_MODE=GROUP
 
-RUN python3.8 -m pip install --no-cache-dir --trusted-host pypi.shopee.io -i http://pypi.shopee.io/simple/ "aip-infer-utils>=0.6.2"
 WORKDIR /opt/LMDeploy
 ADD . /opt/LMDeploy
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
 ARG SM="80"
-RUN mkdir -p build && cd build &&\
+RUN python3 -m pip install --no-cache-dir -r requirements.txt && \
+    mkdir -p build && cd build && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
@@ -30,8 +30,6 @@ RUN mkdir -p build && cd build &&\
     # rm -rf build
     ls build
 ENV LD_LIBRARY_PATH=/opt/LMDeploy/build/install/lib:$LD_LIBRARY_PATH
-RUN cp /opt/LMDeploy/scripts/gemm_config_v100.in /workspace/gemm_config.in
-RUN cp /opt/LMDeploy/scripts/gen_gemm_config.sh /workspace/gen_gemm_config.sh
 
 WORKDIR /workspace
 ENV PROMETHEUS_MULTIPROC_DIR /workspace/metrics

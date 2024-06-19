@@ -21,6 +21,6 @@ IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/lmdpeloy:${VERSION}-arch_${CU
 docker build --progress auto \
   --build-arg SM=${CUDA_ARCHS} \
   -t ${IMAGE_TAG} \
-  -f ../docker/Dockerfile.lmdeploy ..
+  -f ../docker/Dockerfile.lmdeploy .
 
 docker push $IMAGE_TAG
