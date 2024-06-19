@@ -33,15 +33,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1.1 git clone repo
+    - name: Clean up disk space
+      run: |
+        echo -e "\nBefore removing files:"
+        df -h
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+        echo -e "\nAfter removing files:"
+        df -h
+
+    # 1.1 Clone repo
     - name: Clone llm-benchmarks
       uses: actions/checkout@v3
 
     # 1.2 Build and push image to ACR
     - name: Build and push image to ACR
       run: |
+        echo -e "\nWorkspace path:"
+        pwd
+        tree -L 1
+
         docker version
         docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
 
-        ls
         bash scripts/trt_llm/build_docker.sh all
