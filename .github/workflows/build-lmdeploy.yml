@@ -1,0 +1,64 @@
+# This workflow will build and push a new container image to Alibaba Cloud Container Registry (ACR),
+# and then will deploy it to Alibaba Cloud Container Service for Kubernetes (ACK), when there is a push to the "main" branch.
+#
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ACR repository to store your container images.
+#    You can use ACR EE instance for more security and better performance.
+#    For instructions see https://www.alibabacloud.com/help/doc-detail/142168.htm
+#
+# 2. Create an ACK cluster to run your containerized application.
+#    You can use ACK Pro cluster for more security and better performance.
+#    For instructions see https://www.alibabacloud.com/help/doc-detail/95108.htm
+#
+# 3. Store your AccessKey pair in GitHub Actions secrets named `ACCESS_KEY_ID` and `ACCESS_KEY_SECRET`.
+#    For instructions on setting up secrets see: https://developer.github.com/actions/managing-workflows/storing-secrets/
+#
+# 4. Change the values for the REGION_ID, REGISTRY, NAMESPACE, IMAGE, ACK_CLUSTER_ID, and ACK_DEPLOYMENT_NAME.
+#
+
+name: Build_LMDeploy_Image
+
+on:
+  workflow_dispatch:
+#  push:
+#    branches: [ "dev" ]
+
+env:
+  REGION_ID: cn-beijing
+  IMAGE_ADDR: registry.cn-beijing.aliyuncs.com
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    #    runs-on: self-hosted
+
+    steps:
+    - name: Clean up disk space
+      run: |
+        echo -e "\nBefore removing files:"
+        df -h
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+        echo -e "\nAfter removing files:"
+        df -h
+
+    # 1.1 Clone repo
+    - name: Clone llm-benchmarks
+      uses: actions/checkout@v3
+
+    # 1.2 Build and push image to ACR
+    - name: Build and push image to ACR
+      run: |
+        echo -e "\nWorkspace path:"
+        pwd
+        tree -L 1
+
+        docker version
+        docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
+
+        bash scripts/lmdeploy/build_docker.sh
