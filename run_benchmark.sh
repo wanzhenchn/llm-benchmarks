@@ -131,15 +131,15 @@ gpu_num=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
 service_name=0.0.0.0
 service_port=800
 
-BACKEND="lmdeploy"
+#BACKEND="lmdeploy"
 #BACKEND="vllm"
-#BACKEND="tensorrt-llm"
+BACKEND="tensorrt-llm"
 if [ $BACKEND = "lmdeploy" ]; then
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/lmdpeloy:0.4.2-arch_808990
 elif [ $BACKEND = "vllm" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_7075808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_70808990
 elif [ $BACKEND = "tensorrt-llm" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.11.0.dev2024061800-arch_808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.11.0.dev2024061800-arch_70808990
 fi
 
 tp_size="1"
@@ -148,14 +148,14 @@ batch_size="1 2"
 
 for tp in ${tp_size};
 do
-  LOG_PATH=${BACKEND}-perf-tp${tp_size}.log
+  LOG_PATH=${BACKEND}-perf-tp${tp}.log
 
   for out_len in ${gen_len};
   do
     # if you want to make benchmark tests after launching server in container,
     # please COMMENT the start_service and stop_service, then modify the
     # service_name or service_port if necessary.
-    container_name=benchmark-${BACKEND}-tp${tp_size}-${out_len}
+    container_name=benchmark-${BACKEND}-tp${tp}-${out_len}
     start_service ${BACKEND} $tp ${container_name}
 
     for bs in ${batch_size};

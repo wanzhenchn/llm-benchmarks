@@ -14,7 +14,7 @@ fi
 
 port=$1
 
-IMAGE_TAG=wanzhencn/tensorrt-llm:0.11.0.dev2024061100-arch_808990
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.11.0.dev2024061800-arch_70808990
 
 docker run -it --gpus all --privileged \
   --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \

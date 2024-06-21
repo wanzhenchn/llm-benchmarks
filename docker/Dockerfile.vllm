@@ -20,6 +20,5 @@ WORKDIR /opt/vllm
 ADD . /opt/vllm
 RUN cd /opt/vllm && pip install -e . --verbose
 
-RUN python3 -m pip install --no-cache-dir flash-attn==v2.5.8
 
 WORKDIR /workspace
