@@ -131,15 +131,15 @@ gpu_num=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
 service_name=0.0.0.0
 service_port=800
 
-#BACKEND="lmdeploy"
+BACKEND="lmdeploy"
 #BACKEND="vllm"
-BACKEND="tensorrt-llm"
+#BACKEND="tensorrt-llm"
 if [ $BACKEND = "lmdeploy" ]; then
-  IMAGE_TAG=wanzhencn/lmdeploy:0.4.0
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/lmdpeloy:0.4.2-arch_808990
 elif [ $BACKEND = "vllm" ]; then
-  IMAGE_TAG=wanzhencn/vllm:0.4.2-arch_7075808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_7075808990
 elif [ $BACKEND = "tensorrt-llm" ]; then
-  IMAGE_TAG=wanzhencn/tensorrt-llm:0.11.0.dev2024061100-arch_808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.11.0.dev2024061800-arch_808990
 fi
 
 tp_size="1"

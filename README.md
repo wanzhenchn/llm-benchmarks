@@ -10,6 +10,7 @@ LLM-Benchmarks
 <div align="left">
 
 ## Latest News 🔥
+- [2024/06/21] Added support for inference performance benchmark with [LMDeploy](https://github.com/InternLM/lmdeploy).
 - [2024/06/14] Added support for inference performance benchmark with [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
 - [2024/06/14] We officially released LLM-Benchmarks!
 
@@ -41,7 +42,7 @@ You can build docker images by running:
 bash scripts/trt_llm/build_docker.sh all
 
 # for lmdeploy
-bash scripts/lmdeploy/build_docker.sh src
+bash scripts/lmdeploy/build_docker.sh
 
 # for vllm
 bash scripts/vllm/build_docker.sh
