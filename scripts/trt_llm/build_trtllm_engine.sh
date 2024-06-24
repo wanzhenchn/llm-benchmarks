@@ -7,17 +7,18 @@
 
 set -euxo pipefail
 
-if [ $# != 6  ]; then
-  echo "Usage: $0 hf_model_path precision(fp16, int4, kv8, int4_kv8, w8a8, fp8) hf_model_converted_path engine_path tp_size device_id(0,1)"
+if [ $# != 7  ]; then
+  echo "Usage: $0 hf_model_path model_type(moe or llama) precision(fp16, int4, kv8, int4_kv8, w8a8, fp8) hf_model_converted_path engine_path tp_size device_id(0,1)"
   exit
 fi
 
 model_path=$1
-precision=$2
-converted_ckpt_path=$3
-engine_path=$4
-tp=$5
-device_id=$6
+model_type=$2
+precision=$3
+converted_ckpt_path=$4
+engine_path=$5
+tp=$6
+device_id=$7
 # tp=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
 
 saved_ckpt_path=${converted_ckpt_path}-${tp}-${precision}
@@ -42,6 +43,12 @@ function convert_checkpoint {
         extra_args+="--smoothquant 0.5 "
         extra_args+="--per_token "
         extra_args+="--per_channel "
+      fi
+
+      # https://github.com/NVIDIA/TensorRT-LLM/tree/main/examples/mixtral
+      if [ $model_type = moe ]; then
+        extra_args+="--moe_tp_size ${tp_size} "
+#        extra_args+="--moe_ep_size ${ep_size} "
       fi
 
       python /app/tensorrt_llm/examples/llama/convert_checkpoint.py \
