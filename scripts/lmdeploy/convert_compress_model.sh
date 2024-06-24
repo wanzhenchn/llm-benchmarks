@@ -108,6 +108,10 @@ elif [ $deploy_model_format = hf ]; then
     exit
 
   elif [ $precision = w4a16 ]; then
+    transformers_version=$(grep 'transformers_version' ${MODEL_PATH}/config.json | sed 's/.*"transformers_version": "\(.*\)",/\1/')
+    transformers_base_version=$(python3 -c "from packaging.version import parse; print(parse('${transformers_version}').base_version)")
+    python3 -m pip install --no-cache-dir transformers==${transformers_base_version}
+
     quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
 
   elif [ $precision = kv8 ]; then
