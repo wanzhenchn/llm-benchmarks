@@ -10,7 +10,7 @@ LLM-Benchmarks
 <div align="left">
 
 ## Latest News 🔥
-- [2024/06/21] Added support for inference performance benchmark with [LMDeploy](https://github.com/InternLM/lmdeploy).
+- [2024/06/21] Added support for inference performance benchmark with [LMDeploy](https://github.com/InternLM/lmdeploy) and [vLLM](https://github.com/vllm-project/vllm/).
 - [2024/06/14] Added support for inference performance benchmark with [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
 - [2024/06/14] We officially released LLM-Benchmarks!
 
@@ -19,7 +19,7 @@ LLM-Benchmarks
 
 LLM-Benchmarks is an easy-to-use toolbox for benchmarking Large Language Models (LLMs) performance on inference and evalution.
 
-- Inference Performance: Benchmarking LLMs service deployed with inference frameworks (e.g., [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [lmdeploy](https://github.com/InternLM/lmdeploy) and [vLLM](https://github.com/vllm-project/vllmA),) under different batch sizes and generation lengths.
+- Inference Performance: Benchmarking LLMs service deployed with inference frameworks (e.g., [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [lmdeploy](https://github.com/InternLM/lmdeploy) and [vLLM](https://github.com/vllm-project/vllm),) under different batch sizes and generation lengths.
 
 - Task Evaluation: Few-shot evaluation of LLMs throuth APIs including [OpenAI](https://openai.com/), and [Triton Inference Server](https://github.com/triton-inference-server) with [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness).
 
