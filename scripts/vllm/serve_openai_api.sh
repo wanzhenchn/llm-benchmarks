@@ -34,6 +34,10 @@ if [ $# = 4 ] || [ $# = 5 ]; then
     extra_args+="--dtype half "
     extra_args+="--quantization awq" # {awq,squeezellm,None}
 
+  elif [ $mode = fp8 ]; then
+    extra_args+="--dtype auto "
+    extra_args+="--quantization fp8" # {awq,squeezellm,None}
+
   elif [ $mode = lora ]; then
     extra_args+="--dtype auto "
     extra_args+="--enable-lora "
