@@ -45,7 +45,7 @@ class AutoFP8:
 
 def main(model_path: str,
          saved_path: str,
-         calib_size: int = 152,
+         calib_size: int = 512,
          ):
     fp8_helper = AutoFP8(model_path, saved_path, calib_size)
     fp8_helper.apply_fp8()
