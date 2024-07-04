@@ -4,10 +4,10 @@ ARG BACKEND=lmdeploy
 FROM ${BASE_IMAGE}:${VERSION}
 
 WORKDIR /workspace
-COPY ./llm-evaluation-harness llm-evaluation-harness
+COPY lm-evaluation-harness lm-evaluation-harness
 
-RUN cd /workspace/llm-evaluation-harness && pip3 install -e .
-RUN python3 -m pip install fire && python3 -m pip uninstall transformer_engine
+RUN cd /workspace/lm-evaluation-harness && pip3 install -e .
+RUN python3 -m pip install fire && python3 -m pip uninstall -y transformer_engine
 
 ENV PYTHONPATH=/workspace/llm-evaluation-harness:$PYTHONPATH
 ENV SERVICE_PORT=8005

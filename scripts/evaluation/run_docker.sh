@@ -14,7 +14,7 @@ fi
 
 port=$1
 
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_808990-harness
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_70808990-harness
 
 docker run -it --gpus all --privileged --shm-size=10g \
             --network=host --ipc=host \

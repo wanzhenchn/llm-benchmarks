@@ -10,6 +10,7 @@ LLM-Benchmarks
 <div align="left">
 
 ## Latest News 🔥
+- [2024/07/04] Support for evaluation with [vLLM](https://github.com/vllm-project/vllm/) backend using [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness).
 - [2024/06/21] Added support for inference performance benchmark with [LMDeploy](https://github.com/InternLM/lmdeploy) and [vLLM](https://github.com/vllm-project/vllm/).
 - [2024/06/14] Added support for inference performance benchmark with [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
 - [2024/06/14] We officially released LLM-Benchmarks!
@@ -52,8 +53,15 @@ bash scripts/vllm/build_docker.sh
 
 - Inference Performance
 ```bash
-bash run_benchmark.sh model_path dataset_path sample_num device_id(0 or 0,1)
+bash run_benchmark.sh model_path dataset_path sample_num device_id(like 0 or 0,1)
 
 ```
 
 - Task Evaluation
+```bash
+# Build evalution image
+bash scripts/evaluation/build_docker.sh vllm # (or lmdeploy or trt-llm)
+
+# Evalution with vLLM backend
+bash run_eval.sh mode(fp16, fp8-kv-fp16, fp8-kv-fp8) model_path device_id(like 0 or 0,1)"
+```

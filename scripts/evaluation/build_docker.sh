@@ -15,7 +15,7 @@ fi
 
 BACKEND=$1
 
-if [ ! -d llm-evaluation-harness ]; then
+if [ ! -d lm-evaluation-harness ]; then
   git clone https://github.com/EleutherAI/lm-evaluation-harness
 fi
 
@@ -25,7 +25,7 @@ if [ $BACKEND = "lmdeploy" ]; then
   backend=lmdeploy
 elif [ $BACKEND = "vllm" ]; then
   BASE_IMAGE=registry.cn-beijing.aliyuncs.com/wanzhen/vllm
-  VERSION=0.5.0.post1-arch_808990
+  VERSION=0.5.0.post1-arch_70808990
   backend=vllm
 elif [ $BACKEND = "trt-llm" ]; then
   BASE_IMAGE=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm
@@ -35,7 +35,7 @@ fi
 
 IMAGE_TAG=${BASE_IMAGE}:${VERSION}-harness
 
-docker build --progress auto \
+docker build \
   --build-arg BASE_IMAGE=${BASE_IMAGE} \
   --build-arg VERSION=${VERSION} \
   --build-arg BACKEND=${backend} \
