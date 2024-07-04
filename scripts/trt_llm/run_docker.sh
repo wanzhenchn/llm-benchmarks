@@ -14,10 +14,10 @@ fi
 
 port=$1
 
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.11.0.dev2024061800-arch_70808990
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.12.0.dev2024070200-arch_808990
 
 docker run -it --gpus all --privileged \
-  --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
+  --network=host --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
   -v ${PWD}:/workspace \
   -v /data:/data \
   -p $port:$port \

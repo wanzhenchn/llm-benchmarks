@@ -139,7 +139,7 @@ if [ $BACKEND = "lmdeploy" ]; then
 elif [ $BACKEND = "vllm" ]; then
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_70808990
 elif [ $BACKEND = "tensorrt-llm" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.11.0.dev2024061800-arch_70808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.12.0.dev2024070200-arch_808990
 fi
 
 tp_size="1"

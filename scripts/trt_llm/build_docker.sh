@@ -38,7 +38,7 @@ else
 fi
 
 if [ $1 = ngc ]; then
-  DOCKER_BUILDKIT=1 docker build --progress auto \
+  DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/tritonserver \
            --build-arg BASE_TAG=24.04-trtllm-python-py3 \
            --build-arg TRT_LLM_VER="${TRT_LLM_VERSION}" \
@@ -46,7 +46,7 @@ if [ $1 = ngc ]; then
            -f docker/Dockerfile.trt_llm_from_ngc .
 
 elif [ $1 = all ]; then
-  DOCKER_BUILDKIT=1 docker build --progress auto \
+  DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/tritonserver \
            --build-arg BASE_TAG=24.05-py3 \
            --build-arg BUILD_WHEEL_ARGS="${BUILD_WHEEL_ARGS}" \
@@ -57,7 +57,7 @@ elif [ $1 = all ]; then
            -f ../docker/Dockerfile.trt_llm_backend .
 
 elif [ $1 = trtllm_src ]; then
-  DOCKER_BUILDKIT=1 docker build --progress auto \
+  DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch \
            --build-arg BASE_TAG=24.02-py3 \
            --build-arg BUILD_WHEEL_ARGS=${BUILD_WHEEL_ARGS} \
