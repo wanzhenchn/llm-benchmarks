@@ -2,7 +2,8 @@ From nvcr.io/nvidia/pytorch:23.10-py3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gdb git ccache
-RUN python3 -m pip install --no-cache-dir cmake packaging
+RUN mkdir -p ~/.pip && echo -e "[global]\nno-cache-dir = true" > ~/.pip/pip.conf
+RUN python3 -m pip install cmake packaging
 
 # cuda arch list used by torch
 ARG torch_cuda_arch_list='7.0 7.5 8.0 8.6 8.9 9.0+PTX'
@@ -19,6 +20,9 @@ ENV VLLM_INSTALL_PUNICA_KERNELS=1
 WORKDIR /opt/vllm
 ADD . /opt/vllm
 RUN cd /opt/vllm && pip install -e . --verbose
+
+# install additional dependencies for openai api server
+RUN python3 -m pip install accelerate protobuf
 
 
 WORKDIR /workspace
