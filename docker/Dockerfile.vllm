@@ -22,7 +22,7 @@ ADD . /opt/vllm
 RUN cd /opt/vllm && pip install -e . --verbose
 
 # install additional dependencies for openai api server
-RUN python3 -m pip install accelerate protobuf
-
+RUN python3 -m pip install fire accelerate protobuf && \
+    python3 -m pip install -U flash-attn
 
 WORKDIR /workspace
