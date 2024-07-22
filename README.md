@@ -37,7 +37,7 @@ wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/r
 
 ### Prepare for Docker image and container environment
 
-You can build docker images by running:
+You can build Docker images locally by running:
 ```bash
 # for tensorrt-llm
 bash scripts/trt_llm/build_docker.sh all
@@ -48,11 +48,20 @@ bash scripts/lmdeploy/build_docker.sh
 # for vllm
 bash scripts/vllm/build_docker.sh
 ```
+or use the available images by `docker pull ${Image}:${Tag}`:
+
+| Image                                                   | Tag                              |
+|---------------------------------------------------------|----------------------------------|
+| registry.cn-beijing.aliyuncs.com/devel-img/lmdeploy     | 0.5.1-arch_808990                |
+| registry.cn-beijing.aliyuncs.com/devel-img/vllm         | 0.5.2-arch_70808990              |
+| registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm | 0.12.0.dev2024071600-arch_808990 |
+
 
 ### Run benchmarks
 
 - Inference Performance
 ```bash
+# Please confirm the version of the image used in the script
 bash run_benchmark.sh model_path dataset_path sample_num device_id(like 0 or 0,1)
 
 ```
