@@ -40,6 +40,10 @@ if [ $# = 3 ] || [ $# = 4 ]; then
     model_args+=",quantization=fp8,kv_cache_dtype=fp8,quantization_param_path=${quant_param_path}"
   fi
 
+  if [ ${tp_size} > 1 ]; then
+    model_args+=",distributed_executor_backend=ray"
+  fi
+
   lm_eval --model vllm \
     --model_args ${model_args} \
     --tasks ${task_list} \
