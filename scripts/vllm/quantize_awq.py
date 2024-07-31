@@ -11,14 +11,18 @@ from transformers import AutoTokenizer
 class AWQ:
     def __init__(self,
                  model_path: str,
-                 saved_path: str):
+                 saved_path: str,
+                 max_calib_samples: int = 128):
         self.saved_path = saved_path
+        self.max_calib_samples = max_calib_samples
 
+        # https://github.com/casper-hansen/AutoAWQ/blob/main/docs/examples.md
+        # To use Marlin, you must specify zero point as False and version as Marlin.
         self.quant_config = {
             "zero_point": True,
             "q_group_size": 128,
             "w_bit": 4,
-             "version": "GEMM"
+            "version": "GEMM"
         }
 
         # Load model
@@ -31,7 +35,8 @@ class AWQ:
 
     def apply_awq(self):
        # Quantize
-       self.model.quantize(self.tokenizer, quant_config=self.quant_config)
+       self.model.quantize(self.tokenizer, quant_config=self.quant_config,
+                           max_calib_samples=self.max_calib_samples)
 
        # Save quantized model
        self.model.save_quantized(self.saved_path)

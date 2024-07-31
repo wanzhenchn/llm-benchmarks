@@ -21,7 +21,7 @@ if [ $# = 3 ]; then
     pip uninstall -y transformer-engine
   fi
 
-  if [ "$(pip list | grep AutoFP8 | wc -l)" -eq "0" ]; then
+  if [ "$(pip list | grep auto-fp8 | wc -l)" -eq "0" ]; then
     rm -rf AutoFP8
     git clone https://github.com/neuralmagic/AutoFP8.git
     pip install -e AutoFP8

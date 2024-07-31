@@ -22,11 +22,12 @@ class AutoFP8:
             quant_method="fp8", activation_scheme=activation_scheme)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path, use_fast=True)
+            model_path, use_fast=True, trust_remote_code=True)
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.model = AutoFP8ForCausalLM.from_pretrained(model_path,
-                                                        self.quantize_config)
+                                                        self.quantize_config,
+                                                        trust_remote_code=True)
 
 
     def apply_fp8(self):
