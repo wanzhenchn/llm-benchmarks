@@ -1,0 +1,5 @@
+FROM nvcr.io/nvidia/k8s/dcgm-exporter:3.3.7-3.5.0-ubuntu22.04
+RUN rm -rf /etc/dcgm-exporter/*.csv
+COPY dcp-metrics.csv /etc/dcgm-exporter/dcp-metrics.csv
+ENV DCGM_EXPORTER_COLLECTORS /etc/dcgm-exporter/dcp-metrics.csv
+CMD ["dcgm-exporter", "-f", "/etc/dcgm-exporter/dcp-metrics.csv", "-c", "5000"]

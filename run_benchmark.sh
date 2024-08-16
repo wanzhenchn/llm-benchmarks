@@ -7,6 +7,28 @@
 ################################################################################
 set -euxo pipefail
 
+
+function start_dcgm(){
+  local dcgm_path=benchmarks/tools/dcgm
+  while true; do
+    if curl --fail --silent --output /dev/null http://localhost:9400/metrics; then
+      echo "DCGM Service Ready."
+      return 0
+    else
+      echo "DCGM Service not ready, starting first..."
+      docker build -t dcgm:1.0 -f ${dcgm_path}/Dockerfile.dcgm ${dcgm_path}
+      if docker ps -a --format '{{.Names}}' | grep -q "benchmark-dcgm"; then
+        docker rm -f benchmark-dcgm
+      fi
+      docker run -d --name benchmark-dcgm --gpus all --cap-add SYS_ADMIN \
+        --env DCGM_EXPORTER_COLLECTORS=/etc/dcgm-exporter/dcp-metrics.csv \
+        -p 9400:9400 dcgm:1.0
+      sleep 30
+    fi
+  done
+}
+
+
 function start_service(){
   local backend=$1
   local tp=$2
@@ -24,7 +46,8 @@ function start_service(){
         --server-port ${service_port} \
         --tp ${tp} \
         --cache-max-entry-count 0.9 \
-        --session-len 4096
+        --session-len 4096 \
+        --max-batch-size 512
 
   elif [ $backend = "vllm" ]; then
     docker run -d --gpus all --env CUDA_VISIBLE_DEVICES=$device_id \
@@ -87,6 +110,7 @@ function profile()
   local bs=$3
   local num_requests=$4
   local log_path=$5
+  local device_ids=$6
 
   if [ $backend = "vllm" ] || [ $backend = "lmdeploy" ]; then
     endpoint="/v1/completions"
@@ -112,34 +136,38 @@ function profile()
       --top_p 0.95 \
       --temperature 1e-7 \
       --repetition_penalty 1.15 \
-      --log_path ${log_path}
+      --log_path ${log_path} \
+      --get_gpu_metrics True \
+      --get_gpu_metrics_freq 5 \
+      --device_ids "$device_ids"
 }
 
 
-if [ $# != 4 ]; then
-  echo "Usage: $0 model_path data_path sample_num device_id(0 or 0,1 or 2,3 or 0,1,2,3)"
+if [ $# != 5 ]; then
+  echo "Usage: $0 model_path data_path sample_num port device_id(0 or 0,1 or 2,3 or 0,1,2,3)"
  exit
 fi
 
 model_path=$1
 test_data=$2
 sample_num=$3
-device_id=$4
+port=$4
+device_id=$5
 
 gpu_num=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
 
 service_name=0.0.0.0
-service_port=800
+service_port=${port}
 
-#BACKEND="lmdeploy"
+BACKEND="lmdeploy"
 #BACKEND="vllm"
-BACKEND="tensorrt-llm"
+#BACKEND="tensorrt-llm"
 if [ $BACKEND = "lmdeploy" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/lmdpeloy:0.4.2-arch_808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/lmdpeloy:0.5.3-arch_808990
 elif [ $BACKEND = "vllm" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.5.0.post1-arch_70808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/vllm:0.5.4-arch_70808990
 elif [ $BACKEND = "tensorrt-llm" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/tensorrt-llm:0.12.0.dev2024070200-arch_808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:0.12.0.dev2024071600-arch_808990
 fi
 
 tp_size="1"
@@ -152,6 +180,11 @@ do
 
   for out_len in ${gen_len};
   do
+    # For local test, start dcgm to capture the GPU metrics, otherwise COMMENT
+    # start_dcgm and set get_gpu_metrics=False
+    start_dcgm
+    get_gpu_metrics=True
+
     # if you want to make benchmark tests after launching server in container,
     # please COMMENT the start_service and stop_service, then modify the
     # service_name or service_port if necessary.
@@ -160,7 +193,7 @@ do
 
     for bs in ${batch_size};
     do
-      profile ${BACKEND} ${out_len} ${bs} ${sample_num} ${LOG_PATH}
+      profile ${BACKEND} ${out_len} ${bs} ${sample_num} ${LOG_PATH} ${device_id}
     done
 
     stop_service ${container_name}

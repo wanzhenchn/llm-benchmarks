@@ -25,6 +25,7 @@ from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
                                   RequestFuncOutput)
 from tokenizer import get_tokenizer
 
+from tools import get_metrics
 
 @dataclass
 class BenchmarkMetrics:
@@ -43,10 +44,19 @@ class BenchmarkMetrics:
     mean_tpot: float
     median_tpot: float
     p99_tpot: float
+    mean_itl: float
+    median_itl: float
+    p99_itl: float
     p90_latency: float
     p95_latency: float
     p99_latency: float
     avg_latency: float
+    gpu_util: float
+    gpu_mem: float
+    sm_active: float
+    sm_occupancy: float
+    dram_active: float
+
 
 
 def read_dataset(dataset_name: str, dataset_path: str, num_requests: int,
@@ -68,11 +78,14 @@ def read_dataset(dataset_name: str, dataset_path: str, num_requests: int,
         elif dataset_path.endswith("json"):
             with open(dataset_path, 'r') as fp:
                 prompts = json.load(fp)
+        elif dataset_path.endswith("jsonl") or dataset_path.endswith("txt"):
+            with open(dataset_path, 'r') as fp:
+                prompts = [json.loads(line)['data']['question'] for line in fp.readlines()]
         else:
             assert False, f"{dataset_path} format not supported"
 
     logging.info(f'elapsed time for read {dataset_path}: '
-          f'{round(time.perf_counter() - start, 2)} s')
+                 f'{round(time.perf_counter() - start, 2)}s')
 
     num_req = min(num_requests, len(prompts))
     if num_req > 0:
@@ -86,29 +99,66 @@ def read_dataset(dataset_name: str, dataset_path: str, num_requests: int,
         prompt_token_ids = tokenizer(prompt).input_ids
         prompt_len = len(prompt_token_ids)
         filtered_dataset.append((prompt, prompt_len))
-    return filtered_dataset
+
+    # expand filtered_dataset to 200 if num_req < 200
+    expanded_dataset = filtered_dataset
+    while len(expanded_dataset) < 200:
+        selected_item = random.choice(filtered_dataset)
+        expanded_dataset.append(selected_item)
+
+    logging.info(f'Request data num: {num_requests}, actual data num: {num_req}'
+                 f', expanded data num: {len(expanded_dataset)}')
+    return expanded_dataset
+
+
+def save_to_jsonl(jsonl_path: str,
+                  outputs: List[RequestFuncOutput],
+                  tokenizer: PreTrainedTokenizerBase):
+    data = []
+    for i in range(len(outputs)):
+        if outputs[i].success:
+            prompt = outputs[i].prompt
+            prompt_len = outputs[i].prompt_len
+            generated_text = outputs[i].generated_text
+            output_len = len(tokenizer(generated_text).input_ids)
+            data.append(
+                {"prompt": prompt,
+                 "generated_text": generated_text,
+                 "prompt_len": prompt_len,
+                 "output_len": output_len,
+                }
+            )
+    with open(jsonl_path, 'a') as f:
+        for item in data:
+            f.write(json.dumps(item) + "\n")
+
+    logging.info(f'Requested len(data) results have been saved in {jsonl_path}')
 
 
 def calculate_metrics(outputs: List[RequestFuncOutput],
                       dur_s: float,
                       tokenizer: PreTrainedTokenizerBase,
+                      gpu_metrics: dict,
                       ) -> Tuple[BenchmarkMetrics, List[int]]:
     actual_output_lens = []
     total_input = 0
     completed = 0
-    tpots = []
-    ttfts = []
-    res_latency = []
+    itls: List[float] = []
+    tpots: List[float] = []
+    ttfts: List[float] = []
+    res_latency: List[float] = []
 
     for i in range(len(outputs)):
         if outputs[i].success:
-            output_len = len(tokenizer(outputs[i].generated_text).input_ids)
+            output_len = len(tokenizer(
+                outputs[i].generated_text, add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
             res_latency.append(outputs[i].latency)
             total_input += outputs[i].prompt_len
             if output_len > 1:
                 tpots.append(
                     (outputs[i].latency - outputs[i].ttft) / (output_len - 1))
+            itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
             completed += 1
         else:
@@ -126,16 +176,25 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
         input_throughput=total_input / dur_s,
         output_throughput=sum(actual_output_lens) / dur_s,
         # ttfts is empty if streaming is not supported by backend
-        mean_ttft=np.mean(ttfts or 0),
-        median_ttft=np.median(ttfts or 0),
-        p99_ttft=np.percentile(ttfts or 0, 99),
-        mean_tpot=np.mean(tpots),
-        median_tpot=np.median(tpots),
-        p99_tpot=np.percentile(tpots, 99),
-        p90_latency=np.percentile(res_latency, 90),
-        p95_latency=np.percentile(res_latency, 95),
-        p99_latency=np.percentile(res_latency, 99),
-        avg_latency=np.mean(res_latency),
+        mean_ttft=np.mean(ttfts or 0) * 1000,
+        median_ttft=np.median(ttfts or 0) * 1000,
+        p99_ttft=np.percentile(ttfts or 0, 99) * 1000,
+        mean_tpot=np.mean(tpots or 0) * 1000,
+        median_tpot=np.median(tpots or 0) * 1000,
+        p99_tpot=np.percentile(tpots or 0, 99) * 1000,
+        # add ITL results and tweak TPOT results
+        mean_itl=np.mean(itls or 0) * 1000,
+        median_itl=np.median(itls or 0) * 1000,
+        p99_itl=np.percentile(itls or 0, 99) * 1000,
+        p90_latency=np.percentile(res_latency, 90) * 1000,
+        p95_latency=np.percentile(res_latency, 95) * 1000,
+        p99_latency=np.percentile(res_latency, 99) * 1000,
+        avg_latency=np.mean(res_latency) * 1000,
+        gpu_util=np.mean(gpu_metrics['gpu_util'][3:-2] if gpu_metrics else 0),
+        gpu_mem=np.mean(gpu_metrics['gpu_mem'][3:-2] if gpu_metrics else 0),
+        sm_active=np.mean(gpu_metrics['sm_active'][3:-2] if gpu_metrics else 0),
+        sm_occupancy=np.mean(gpu_metrics['sm_occupancy'][3:-2] if gpu_metrics else 0),
+        dram_active=np.mean(gpu_metrics['dram_active'][3:-2] if gpu_metrics else 0),
     )
 
     return metrics, actual_output_lens
@@ -150,24 +209,24 @@ async def warmup(model_id: str,
                  top_k: int = 3,
                  top_p: float = 0.95,
                  temperature: float = 0.01,
-                 repetition_penalty: float = 1.15):
+                 repetition_penalty: float = 1.15,
+                 warmup_duration_s: int = 60):
     logging.info('start to warmup ...')
 
     _start = time.perf_counter()
-
-    input_requests = input_requests[:max_concurrency] if max_concurrency > 20 \
-        else input_requests[:20]
-    semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
-    tasks = []
-    for prompt, prompt_len in input_requests:
-        tasks.append(
-            asyncio.create_task(
-                process(semaphore, api_url, model_id, prompt, prompt_len,
-                        request_func, req_output_len, top_k, top_p,
-                        repetition_penalty, temperature, 1, False, None)
+    while time.perf_counter() - _start < warmup_duration_s:
+        input_requests = input_requests[:max_concurrency]
+        semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
+        tasks = []
+        for prompt, prompt_len in input_requests:
+            tasks.append(
+                asyncio.create_task(
+                    process(semaphore, api_url, model_id, prompt, prompt_len,
+                            request_func, req_output_len, top_k, top_p,
+                            repetition_penalty, temperature, 1, False, None)
+                )
             )
-        )
-    outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
+        outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
 
     _end = time.perf_counter()
     logging.info(f'end warmup, elapsed time: {round(_end - _start, 2)} s')
@@ -221,7 +280,12 @@ async def benchmark(api_url: str,
                     temperature: float,
                     best_of: int,
                     use_beam_search: bool,
-                    disable_tqdm: bool):
+                    disable_tqdm: bool,
+                    save_result: bool,
+                    log_path: str,
+                    get_gpu_metrics: bool,
+                    get_gpu_metrics_freq: int,
+                    device_ids: str):
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
     semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
@@ -237,7 +301,19 @@ async def benchmark(api_url: str,
                         use_beam_search, pbar)
             )
         )
+
+    # start gpu metrics collection
+    if get_gpu_metrics:
+        stop_event = asyncio.Event()
+        gpu_metrics_task = asyncio.create_task(
+            get_metrics(device_ids, get_gpu_metrics_freq, stop_event))
+
     outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
+
+    gpu_metrics = None
+    if get_gpu_metrics:
+        stop_event.set()
+        gpu_metrics = await gpu_metrics_task
 
     if not disable_tqdm:
         pbar.close()
@@ -248,6 +324,7 @@ async def benchmark(api_url: str,
         outputs=outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
+        gpu_metrics=gpu_metrics
     )
 
     logging.info(f'\n{"-" * 50}\n'
@@ -263,24 +340,54 @@ async def benchmark(api_url: str,
               "Avg_Input_Token_Len": round(metrics.input_token_avg, 2),
               "Avg_Gen_Token_Len": round(metrics.output_token_avg, 2),
               "Elapse_Time (s)": round(metrics.elapsed_time, 3),
-              "Time_to_First_Token_AVG (s)": round(metrics.mean_ttft, 3),
-              "Time_to_First_Token_P99 (s)": round(metrics.p99_ttft, 3),
-              "Time_per_Output_Token_AVG (s)": round(metrics.mean_tpot, 3),
-              "Time_per_Output_Token_P99 (s)": round(metrics.p99_tpot, 3),
-              "Latency_P90 (s)": round(metrics.p90_latency, 3),
-              "Latency_P95 (s)": round(metrics.p95_latency, 3),
-              "Latency_P99 (s)": round(metrics.p99_latency, 3),
-              "Latency_AVG (s)": round(metrics.avg_latency, 3),
-              "Token QPS (token/s)": round(metrics.output_throughput, 2),
-              "Service QPS (req/s)": round(metrics.request_throughput, 2),
+              "Time_to_First_Token_AVG (ms)": round(metrics.mean_ttft),
+              "Time_to_First_Token_P99 (ms)": round(metrics.p99_ttft),
+              "Time_per_Output_Token_AVG (ms)": round(metrics.mean_tpot),
+              "Time_per_Output_Token_P99 (ms)": round(metrics.p99_tpot),
+              "Inter_Token_Latency_AVG (ms)": round(metrics.mean_itl),
+              "Inter_Token_Latency_P99 (ms)": round(metrics.p99_itl),
+              "Latency_P90 (ms)": round(metrics.p90_latency),
+              "Latency_P95 (ms)": round(metrics.p95_latency),
+              "Latency_P99 (ms)": round(metrics.p99_latency),
+              "Latency_AVG (ms)": round(metrics.avg_latency),
+              "Token Throughput (token/s)": round(metrics.output_throughput, 2),
+              "Service Throughput (req/s)": round(metrics.request_throughput, 2),
+              "GPU UTIL": round(metrics.gpu_util),
+              "GPU Mem (MB)": round(metrics.gpu_mem, 2),
+              "SM Active": round(metrics.sm_active, 2),
+              "SM Occupancy": round(metrics.sm_occupancy, 2),
+              "DRAM Active": round(metrics.dram_active, 2),
             }
 
+    # display perf data on screen
     df = pd.DataFrame([result])
     df = df.transpose()
     df.columns = ["" for i in range(len(df.columns))]
     logging.info('Performance Summary' \
                  f'{df.to_markdown(tablefmt="simple", numalign="left", stralign="left")}\n')
-    return result
+
+    if save_result:
+        # save performance data to csv file
+        csv_file_path = os.path.splitext(log_path)[0] + ".csv"
+        header = "Successful Request, Request_Gen_Token_Len, " \
+                 "Batch Size, Avg_Input_Token_Len, " \
+                 "Avg_Gen_Token_Len, Elapse_Time (s), " \
+                 "Time_to_First_Token_AVG (ms), Time_to_First_Token_P99 (ms), " \
+                 "Time_per_Output_Token_AVG (ms), Time_per_Output_Token_P99 (ms), " \
+                 "Latency_P90 (ms), Latency_P95 (ms), " \
+                 "Latency_P99 (ms), Latency_AVG (ms), " \
+                 "Token Throughput (token/s), Service Throughput (req/s), " \
+                 "GPU UTIL, GPU Mem (MB), SM Active, SM Occupancy, DRAM Active\n"
+        with open(csv_file_path, 'a') as f:
+            if not f.tell():
+                f.write(header)
+            line = ''.join(str(v)+',' for v in result.values()) + '\n'
+            f.write(line)
+            logging.info(f'Performance data have been saved in {csv_file_path}')
+
+        # save returned data to jsonl file
+        jsonl_file_path = os.path.splitext(log_path)[0] + ".jsonl"
+        save_to_jsonl(jsonl_file_path, outputs, tokenizer)
 
 
 def main(backend: str = "vllm",
@@ -303,7 +410,10 @@ def main(backend: str = "vllm",
          trust_remote_code: bool = True,
          disable_tqdm: bool = False,
          save_result: bool = True,
-         log_path: str = 'perf.log'):
+         log_path: str = 'perf.log',
+         get_gpu_metrics: bool = True,
+         get_gpu_metrics_freq: int = 10,
+         device_ids: str = "0,1"):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -336,9 +446,15 @@ def main(backend: str = "vllm",
                               trust_remote_code=trust_remote_code)
 
 
+    # read dataset
     input_requests = read_dataset(dataset_name, dataset_path, num_requests,
                                   tokenizer)
-    input_requests = input_requests * max(1, int(batch_size / 64))
+    # for larger batch size, we expand the dataset again
+    if len(input_requests) <= 256:
+        ratio = max(1, int(batch_size / 64))
+    else:
+        ratio = max(1, int(batch_size / 128))
+    input_requests = input_requests * ratio
 
     # warmup
     _ = asyncio.run(
@@ -347,41 +463,27 @@ def main(backend: str = "vllm",
     )
 
     # run benchmark
-    benchmark_result = asyncio.run(
-        benchmark(
-            api_url=api_url,
-            model_id=model_id,
-            tokenizer=tokenizer,
-            request_func=request_func,
-            max_concurrency=batch_size,
-            input_requests=input_requests,
-            req_output_len=request_output_len,
-            top_k=top_k,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-            temperature=temperature,
-            best_of=best_of,
-            use_beam_search=use_beam_search,
-            disable_tqdm=disable_tqdm,
-        ))
-
-    # Save results to csv file
-    if save_result:
-        csv_file_path = os.path.splitext(log_path)[0] + ".csv"
-        header = "Successful Request, Request_Gen_Token_Len, " \
-                 "Batch Size, Avg_Input_Token_Len, " \
-                 "Avg_Gen_Token_Len, Elapse_Time (s), " \
-                 "Time_to_First_Token_AVG (s), Time_to_First_Token_P99 (s), " \
-                 "Time_per_Output_Token_AVG (s), Time_per_Output_Token_P99 (s), " \
-                 "Latency_P90 (s), Latency_P95 (s), " \
-                 "Latency_P99 (s), Latency_AVG (s), " \
-                 "Token QPS (token/s), Service QPS (req/s)\n"
-        with open(csv_file_path, 'a') as f:
-            if not f.tell():
-                f.write(header)
-            line = ''.join(str(v)+',' for v in benchmark_result.values()) + '\n'
-            f.write(line)
-            logging.info(f'Performance data have been saved in {csv_file_path}')
+    asyncio.run(
+        benchmark(api_url=api_url,
+                  model_id=model_id,
+                  tokenizer=tokenizer,
+                  request_func=request_func,
+                  max_concurrency=batch_size,
+                  input_requests=input_requests,
+                  req_output_len=request_output_len,
+                  top_k=top_k,
+                  top_p=top_p,
+                  repetition_penalty=repetition_penalty,
+                  temperature=temperature,
+                  best_of=best_of,
+                  use_beam_search=use_beam_search,
+                  disable_tqdm=disable_tqdm,
+                  save_result=save_result,
+                  log_path=log_path,
+                  get_gpu_metrics=get_gpu_metrics,
+                  get_gpu_metrics_freq=get_gpu_metrics_freq,
+                  device_ids=device_ids)
+    )
 
 
 if __name__ == "__main__":

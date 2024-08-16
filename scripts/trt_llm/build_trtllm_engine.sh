@@ -105,6 +105,8 @@ function build_tensorrt_engine {
   max_beam_width=1
   max_num_tokens=$(echo "${max_batch_size} ${max_input_len} ${alpha} ${max_beam_width}" | awk '{print int($1*$2*$3+$1*$4*(1-$3))}')
 
+  max_seq_len=$(echo "${max_input_len} ${max_output_len}" | awk '{print int($1+$2)}')
+
   # If no nvlink, disable custom all reduce.
   extra_args=""
   if [ "$(nvidia-smi nvlink -s | wc -l)" -eq "0"  ] || [ $(nvidia-smi nvlink --status | grep inActive | wc -l) -ge 1 ]; then
@@ -118,7 +120,7 @@ function build_tensorrt_engine {
   trtllm-build --checkpoint_dir ${converted_checkpoint} \
     --max_batch_size ${max_batch_size} \
     --max_input_len ${max_input_len} \
-    --max_output_len ${max_output_len} \
+    --max_seq_len ${max_seq_len} \
     --max_num_tokens ${max_num_tokens} \
     --gemm_plugin auto \
     --gpt_attention_plugin float16 \
@@ -169,7 +171,7 @@ function run_engine {
 }
 
 
-max_batch_size=64
+max_batch_size=256
 max_input_len=2048
 max_output_len=1024
 

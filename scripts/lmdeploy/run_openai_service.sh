@@ -38,7 +38,9 @@ if [ $precision = fp16 ]; then
     --server-port ${service_port} \
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
-    --session-len 4096
+    --session-len 4096 \
+    --max-batch-size 256 \
+    --enable-prefix-caching
 #    --log-level INFO
 
 elif [ $precision = kv8 ]; then
@@ -49,6 +51,7 @@ elif [ $precision = kv8 ]; then
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
     --session-len 4096 \
+    --max-batch-size 256 \
     --quant-policy 8 \
     --model-format hf
 
@@ -60,6 +63,7 @@ elif [ $precision = w4a16 ]; then
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
     --session-len 4096 \
+    --max-batch-size 256 \
     --model-format awq
 else
   echo "Precision only supports fp16, w4a16 or kv8"

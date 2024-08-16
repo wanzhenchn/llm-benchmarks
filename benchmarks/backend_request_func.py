@@ -31,6 +31,7 @@ class RequestFuncInput:
 
 @dataclass
 class RequestFuncOutput:
+    prompt: str = ""
     generated_text: str = ""
     success: bool = False
     latency: float = 0.0
@@ -62,6 +63,7 @@ async def async_request_trt_llm(
             "repetition_penalty": request_func_input.repetition_penalty,
         }
         output = RequestFuncOutput()
+        output.prompt = request_func_input.prompt
         output.prompt_len = request_func_input.prompt_len
 
         ttft = 0.0
@@ -135,6 +137,7 @@ async def async_request_openai_completions(
         }
 
         output = RequestFuncOutput()
+        output.prompt = request_func_input.prompt
         output.prompt_len = request_func_input.prompt_len
 
         generated_text = ""
@@ -222,6 +225,7 @@ async def async_request_openai_chat_completions(
         }
 
         output = RequestFuncOutput()
+        output.prompt = request_func_input.prompt
         output.prompt_len = request_func_input.prompt_len
 
         generated_text = ""
