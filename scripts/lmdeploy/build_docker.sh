@@ -16,7 +16,7 @@ cd lmdeploy
 
 CUDA_ARCHS="80;89;90"
 VERSION=$(grep '^__version__' ./lmdeploy/version.py | grep -o '=.*' | tr -d "= '")
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/lmdpeloy:${VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/lmdeploy:${VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
 
 docker build --progress auto \
   --build-arg SM=${CUDA_ARCHS} \
