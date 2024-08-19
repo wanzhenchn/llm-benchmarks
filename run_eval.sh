@@ -30,7 +30,7 @@ if [ $# = 3 ] || [ $# = 4 ]; then
 
   task_list="commonsense_qa,hellaswag,openbookqa,piqa,social_iqa,gsm8k,mmlu,boolq,scrolls_quality,ceval-valid"
 
-  model_args="pretrained=${model_path},tensor_parallel_size=${tp_size},dtype=auto,gpu_memory_utilization=0.9"
+  model_args="pretrained=${model_path},tensor_parallel_size=${tp_size},dtype=auto,gpu_memory_utilization=0.9,add_bos_token=True"
 
   if [ $mode = fp16 ]; then
     :

@@ -4,52 +4,43 @@
 # @Details  : Apply fp8 quantization to LLMs on vLLM
 ################################################################################
 import fire
-from datasets import load_dataset
 from transformers import AutoTokenizer
-from auto_fp8 import AutoFP8ForCausalLM, BaseQuantizeConfig
+from llmcompressor.transformers import SparseAutoModelForCausalLM, oneshot
+from llmcompressor.modifiers.quantization import QuantizationModifier
 
 # Credit to: https://github.com/vllm-project/vllm/blob/main/docs/source/quantization/fp8.rst
-class AutoFP8:
+class LLMCompressor:
     def __init__(self,
                  model_path: str,
-                 saved_path: str,
-                 calib_size: int = 512,
-                 activation_scheme: str = "static"):
+                 saved_path: str):
         self.saved_path = saved_path
-        self.calib_size = calib_size
 
-        self.quantize_config = BaseQuantizeConfig(
-            quant_method="fp8", activation_scheme=activation_scheme)
+        # Configure the simple PTQ quantization
+        self.recipe = QuantizationModifier(
+              targets="Linear", scheme="FP8_DYNAMIC", ignore=["lm_head"]
+        )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path, use_fast=True, trust_remote_code=True)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+            model_path, trust_remote_code=True)
 
-        self.model = AutoFP8ForCausalLM.from_pretrained(model_path,
-                                                        self.quantize_config,
-                                                        trust_remote_code=True)
+        self.model = SparseAutoModelForCausalLM.from_pretrained(
+            model_path, device_map="auto", torch_dtype="auto",
+            trust_remote_code=True)
 
 
     def apply_fp8(self):
-        # Load and tokenize 512 dataset samples for calibration of activation scales
-        ds = load_dataset("mgoin/ultrachat_2k", split="train_sft").select(
-            range(self.calib_size))
-        examples = [self.tokenizer.apply_chat_template(
-            batch["messages"], tokenize=False) for batch in ds]
-        examples = self.tokenizer(examples, padding=True, truncation=True,
-                                  return_tensors="pt").to("cuda")
+        # Apply the quantization algorithm.
+        oneshot(model=self.model, recipe=self.recipe)
 
-        # quantize, and save checkpoint
-        self.model.quantize(examples)
-        self.model.save_quantized(self.saved_path)
+        self.model.save_pretrained(self.saved_path)
+        self.tokenizer.save_pretrained(self.saved_path)
 
 
 def main(model_path: str,
          saved_path: str,
-         calib_size: int = 512,
          ):
-    fp8_helper = AutoFP8(model_path, saved_path, calib_size)
-    fp8_helper.apply_fp8()
+    llm_compressor = LLMCompressor(model_path, saved_path)
+    llm_compressor.apply_fp8()
 
 
 if __name__ == "__main__":

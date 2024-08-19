@@ -21,16 +21,13 @@ if [ $# = 3 ]; then
     pip uninstall -y transformer-engine
   fi
 
-  if [ "$(pip list | grep auto-fp8 | wc -l)" -eq "0" ]; then
-    rm -rf AutoFP8
-    git clone https://github.com/neuralmagic/AutoFP8.git
-    pip install -e AutoFP8
+  if [ "$(pip list | grep llmcompressor | wc -l)" -eq "0" ]; then
+    pip install llmcompressor
   fi
 
   if [ ! -d ${output_model_path} ]; then
     python quantize_fp8.py \
       --model_path ${model_path} \
-      --calib_size 512 \
       --saved_path ${output_model_path}
   else
     echo "The quantized hf model already exits in ${output_model_path}"
