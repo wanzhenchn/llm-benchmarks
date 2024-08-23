@@ -38,7 +38,7 @@ fi
 if [ $1 = ngc ]; then
   DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/tritonserver \
-           --build-arg BASE_TAG=24.04-trtllm-python-py3 \
+           --build-arg BASE_TAG=24.07-trtllm-python-py3 \
            --build-arg TRT_LLM_VER="${TRT_LLM_VERSION}" \
            -t ${IMAGE_TAG} \
            -f docker/Dockerfile.trt_llm_from_ngc .
@@ -46,7 +46,7 @@ if [ $1 = ngc ]; then
 elif [ $1 = all ]; then
   DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/tritonserver \
-           --build-arg BASE_TAG=24.05-py3 \
+           --build-arg BASE_TAG=24.07-py3 \
            --build-arg BUILD_WHEEL_ARGS="${BUILD_WHEEL_ARGS}" \
            --build-arg TORCH_INSTALL_TYPE="pypi" \
            --build-arg TRT_LLM_VER="${TRT_LLM_VERSION}" \

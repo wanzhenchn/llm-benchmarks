@@ -134,7 +134,7 @@ function profile()
       --num_requests ${num_requests} \
       --top_k 3 \
       --top_p 0.95 \
-      --temperature 1e-7 \
+      --temperature 0.01 \
       --repetition_penalty 1.15 \
       --log_path ${log_path} \
       --get_gpu_metrics True \
@@ -167,7 +167,7 @@ if [ $BACKEND = "lmdeploy" ]; then
 elif [ $BACKEND = "vllm" ]; then
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/vllm:0.5.4-arch_70808990
 elif [ $BACKEND = "tensorrt-llm" ]; then
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:0.12.0.dev2024071600-arch_808990
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:0.13.0.dev2024082000-arch_808990
 fi
 
 tp_size="1"

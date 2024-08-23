@@ -91,3 +91,7 @@ DCGM_FI_PROF_PIPE_FP32_ACTIVE,   gauge, Ratio of cycles the fp32 pipes are activ
 DCGM_FI_PROF_PIPE_FP16_ACTIVE,   gauge, Ratio of cycles the fp16 pipes are active (in %).
 DCGM_FI_PROF_PCIE_TX_BYTES,      gauge, The rate of data transmitted over the PCIe bus - including both protocol headers and data payloads - in bytes per second.
 DCGM_FI_PROF_PCIE_RX_BYTES,      gauge, The rate of data received over the PCIe bus - including both protocol headers and data payloads - in bytes per second.
+
+# Row remapper fields (Ampere and newer)
+DCGM_FI_DEV_ROW_REMAP_FAILURE,   gauge, Whether remapping of rows has failed
+DCGM_FI_DEV_ROW_REMAP_PENDING,   gauge, Whether remapping of rows is pending

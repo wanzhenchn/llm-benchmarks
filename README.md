@@ -52,9 +52,9 @@ or use the available images by `docker pull ${Image}:${Tag}`:
 
 | Image                                                   | Tag                              |
 |---------------------------------------------------------|----------------------------------|
-| registry.cn-beijing.aliyuncs.com/devel-img/lmdeploy     | 0.5.1-arch_808990                |
-| registry.cn-beijing.aliyuncs.com/devel-img/vllm         | 0.5.2-arch_70808990              |
-| registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm | 0.12.0.dev2024071600-arch_808990 |
+| registry.cn-beijing.aliyuncs.com/devel-img/lmdeploy     | 0.5.3-arch_808990                |
+| registry.cn-beijing.aliyuncs.com/devel-img/vllm         | 0.5.4-arch_70808990              |
+| registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm | 0.13.0.dev2024082000-arch_808990 |
 
 
 ### Run benchmarks

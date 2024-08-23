@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=nvcr.io/nvidia/tritonserver
-ARG BASE_TAG=24.05-py3
+ARG BASE_TAG=24.07-py3
 
 FROM ${BASE_IMAGE}:${BASE_TAG} as base
 
@@ -100,7 +100,6 @@ RUN mkdir ${BACKEND_DIR}
 ENV LD_LIBRARY_PATH=${BACKEND_DIR}:${LD_LIBRARY_PATH}
 ARG INFLIGHT_BUILD_DIR=/src/inflight_batcher_llm/build
 COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/libtriton_tensorrtllm.so ${BACKEND_DIR}
-COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/libtriton_tensorrtllm_common.so ${BACKEND_DIR}
 COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/trtllmExecutorWorker ${BACKEND_DIR}
 
 # Delete files

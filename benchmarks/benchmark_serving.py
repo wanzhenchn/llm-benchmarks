@@ -13,7 +13,7 @@ import requests
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncGenerator, List, Tuple, Optional, Callable
+from typing import List, Tuple, Optional, Callable
 import numpy as np
 import pandas as pd
 import tabulate
@@ -282,6 +282,7 @@ async def benchmark(api_url: str,
                     use_beam_search: bool,
                     disable_tqdm: bool,
                     save_result: bool,
+                    debug_result: bool,
                     log_path: str,
                     get_gpu_metrics: bool,
                     get_gpu_metrics_freq: int,
@@ -352,7 +353,7 @@ async def benchmark(api_url: str,
               "Latency_AVG (ms)": round(metrics.avg_latency),
               "Token Throughput (token/s)": round(metrics.output_throughput, 2),
               "Service Throughput (req/s)": round(metrics.request_throughput, 2),
-              "GPU UTIL": round(metrics.gpu_util),
+              "GPU UTIL": round(metrics.gpu_util, 1),
               "GPU Mem (MB)": round(metrics.gpu_mem, 2),
               "SM Active": round(metrics.sm_active, 2),
               "SM Occupancy": round(metrics.sm_occupancy, 2),
@@ -378,6 +379,8 @@ async def benchmark(api_url: str,
                  "Latency_P99 (ms), Latency_AVG (ms), " \
                  "Token Throughput (token/s), Service Throughput (req/s), " \
                  "GPU UTIL, GPU Mem (MB), SM Active, SM Occupancy, DRAM Active\n"
+        del result["Inter_Token_Latency_AVG (ms)"]
+        del result["Inter_Token_Latency_P99 (ms)"]
         with open(csv_file_path, 'a') as f:
             if not f.tell():
                 f.write(header)
@@ -385,7 +388,8 @@ async def benchmark(api_url: str,
             f.write(line)
             logging.info(f'Performance data have been saved in {csv_file_path}')
 
-        # save returned data to jsonl file
+    # save returned data to jsonl file
+    if debug_result and max_concurrency == 1:
         jsonl_file_path = os.path.splitext(log_path)[0] + ".jsonl"
         save_to_jsonl(jsonl_file_path, outputs, tokenizer)
 
@@ -410,6 +414,7 @@ def main(backend: str = "vllm",
          trust_remote_code: bool = True,
          disable_tqdm: bool = False,
          save_result: bool = True,
+         debug_result: bool = True,
          log_path: str = 'perf.log',
          get_gpu_metrics: bool = True,
          get_gpu_metrics_freq: int = 10,
@@ -479,6 +484,7 @@ def main(backend: str = "vllm",
                   use_beam_search=use_beam_search,
                   disable_tqdm=disable_tqdm,
                   save_result=save_result,
+                  debug_result=debug_result,
                   log_path=log_path,
                   get_gpu_metrics=get_gpu_metrics,
                   get_gpu_metrics_freq=get_gpu_metrics_freq,
