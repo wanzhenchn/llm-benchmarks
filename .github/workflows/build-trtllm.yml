@@ -29,12 +29,11 @@ env:
   IMAGE_ADDR: registry.cn-beijing.aliyuncs.com
 
 jobs:
-  timeout-minutes: 720
-
   build:
     runs-on: ubuntu-latest
     #    runs-on: self-hosted
 
+   timeout-minutes: 720
     steps:
     - name: Clean up disk space
       run: |
