@@ -30,7 +30,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     #    runs-on: self-hosted
 
     steps:
@@ -59,6 +59,7 @@ jobs:
         pwd
         tree -L 1
 
+        export AWS_EC2_METADATA_DISABLED=true
         docker version
         docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
 
