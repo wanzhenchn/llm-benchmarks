@@ -47,8 +47,14 @@ COPY scripts scripts
 COPY tools tools
 COPY all_models/inflight_batcher_llm triton_model_repo
 COPY tensorrt_llm tensorrt_llm
+# Create cache directories for pip and ccache
+RUN mkdir -p /root/.cache/ccache /root/.cache/pip
+ENV CCACHE_DIR=/root/.cache/ccache
+
+# Build the TRT-LLM wheel
 ARG BUILD_WHEEL_ARGS="--clean --trt_root ${TRT_ROOT} --python_bindings --benchmarks"
-RUN cd tensorrt_llm && python3 scripts/build_wheel.py ${BUILD_WHEEL_ARGS} && cd ..
+RUN --mount=type=cache,target=/root/.cache/pip --mount=type=cache,target=/root/.cache/ccache \
+    cd tensorrt_llm && python3 scripts/build_wheel.py ${BUILD_WHEEL_ARGS} && cd ..
 
 FROM trt_llm_builder as trt_llm_backend_builder
 
@@ -58,11 +64,15 @@ RUN cd inflight_batcher_llm && bash scripts/build.sh && cd ..
 
 FROM trt_llm_backend_builder as final
 
+RUN mkdir -p /root/.cache/pip
+
 # Install TensorRT-LLM
 WORKDIR /app/tensorrt_llm
 ARG SRC_DIR=/src/tensorrt_llm
-COPY --from=trt_llm_builder ${SRC_DIR}/build/*.whl .
-RUN pip3 install *.whl --extra-index-url https://pypi.nvidia.com && rm *.whl
+COPY --from=trt_llm_builder ${SRC_DIR}/build/tensorrt_llm*.whl .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install tensorrt_llm*.whl --extra-index-url https://pypi.nvidia.com && \
+    rm tensorrt_llm*.whl
 COPY --from=trt_llm_builder ${SRC_DIR}/cpp/include include
 RUN ln -sv $(python3 -c 'import site; print(f"{site.getsitepackages()[0]}/tensorrt_llm/bin")') bin && \
     test -f bin/executorWorker && \
@@ -96,11 +106,7 @@ ENV TRT_LLM_GIT_COMMIT=${GIT_COMMIT} TRT_LLM_VERSION=${TRT_LLM_VER}
 
 # Install TensorRT-LLM backend
 ARG BACKEND_DIR=/opt/tritonserver/backends/tensorrtllm
-RUN mkdir ${BACKEND_DIR}
 ENV LD_LIBRARY_PATH=${BACKEND_DIR}:${LD_LIBRARY_PATH}
-ARG INFLIGHT_BUILD_DIR=/src/inflight_batcher_llm/build
-COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/libtriton_tensorrtllm.so ${BACKEND_DIR}
-COPY --from=trt_llm_backend_builder ${INFLIGHT_BUILD_DIR}/trtllmExecutorWorker ${BACKEND_DIR}
 
 # Delete files
 RUN rm -rf /src  && cd /opt/tritonserver/backends && \
