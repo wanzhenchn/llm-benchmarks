@@ -24,7 +24,7 @@ if [ $1 = all ] || [ $1 = trtllm_src ]; then
   fi
   cd tensorrtllm_backend && git checkout dev
 
-  CUDA_ARCHS="80-real;89-real;90-real"
+  CUDA_ARCHS="80-real;90-real"
   GIT_COMMIT=$(git rev-parse HEAD)
   TRT_LLM_VERSION=$(grep '^__version__' tensorrt_llm/tensorrt_llm/version.py | grep -o '=.*' | tr -d '= "')
   BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --python_bindings --benchmarks --cuda_architectures ${CUDA_ARCHS}"
