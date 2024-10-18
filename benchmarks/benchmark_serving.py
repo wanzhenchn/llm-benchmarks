@@ -311,6 +311,8 @@ async def benchmark(api_url: str,
 
     outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
 
+    benchmark_duration = time.perf_counter() - benchmark_start_time
+
     gpu_metrics = None
     if get_gpu_metrics:
         stop_event.set()
@@ -318,8 +320,6 @@ async def benchmark(api_url: str,
 
     if not disable_tqdm:
         pbar.close()
-
-    benchmark_duration = time.perf_counter() - benchmark_start_time
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
