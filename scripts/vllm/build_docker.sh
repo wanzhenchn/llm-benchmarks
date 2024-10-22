@@ -11,7 +11,8 @@ if [ ! -d vllm ]; then
 fi
 cd vllm
 
-VERSION=$(grep '^__version__' ./vllm/version.py | grep -o '=.*' | tr -d '= "')
+VERSION=$(python3 -c "from setuptools_scm import get_version; print(get_version())")
+VERSION=$(echo "$VERSION" | sed 's/\.d[0-9]\{8\}//' | sed 's/+\(g\)\?/-/')
 cuda_arch_list="7.0 8.0 9.0"
 arch=arch_$(echo $cuda_arch_list | tr -d -c 0-9)
 
