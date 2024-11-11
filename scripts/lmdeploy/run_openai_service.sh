@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 if [ $# != 4 ]; then
-  echo "Usage: $0 model_path precision(fp16, w4a16 or kv8) port device_id(0 or 0,1 or 1,3)"
+  echo "Usage: $0 model_path precision(fp16, w4a16 or kv8, fp8) port device_id(0 or 0,1 or 1,3)"
   exit
 fi
 
@@ -31,31 +31,37 @@ if [ ! -e "gemm_config.in" ]; then
     main(tensor_para_size=${gpu_num}, max_batch_size=4, model_path='${model_path}')"
 fi
 
-if [ $precision = fp16 ]; then
-  lmdeploy serve api_server \
-    ${model_path} \
-    --server-name ${service_name} \
-    --server-port ${service_port} \
-    --tp ${gpu_num} \
-    --cache-max-entry-count 0.9 \
-    --session-len 4096 \
-    --max-batch-size 256 \
-    --enable-prefix-caching
-#    --log-level INFO
+extra_args=""
 
-elif [ $precision = kv8 ]; then
-  lmdeploy serve api_server \
-    ${model_path} \
-    --server-name ${service_name} \
-    --server-port ${service_port} \
-    --tp ${gpu_num} \
-    --cache-max-entry-count 0.9 \
-    --session-len 4096 \
-    --max-batch-size 256 \
-    --quant-policy 8 \
-    --model-format hf
+if [ $precision = fp16 ] || [ $precision = w4a16 ] || \
+   [ $precision = fp16-kv-int8 ] || [ $precision = fp16-kv-fp8 ] || \
+   [ $precision = fp8-kv-fp16 ] || [ $precision = fp8-kv-fp8 ]; then
 
-elif [ $precision = w4a16 ]; then
+  if [ $precision = w4a16 ]; then
+    # AWQ + KV-INT8
+    extra_args+="--model-format awq "
+    extra_args+="--quant-policy 8 "
+  elif [ $precision = fp16-kv-int8 ]; then
+    # FP16 + KV-INT8
+    extra_args+="--model-format hf "
+    extra_args+="--quant-policy 8 "
+
+  elif [ $precision = fp16-kv-fp8 ]; then
+    # FP16 + KV-FP8
+    extra_args+="--model-format hf "
+    extra_args+="--quant-policy 16 "
+
+  elif [ $precision = fp8-kv-fp16 ]; then
+    # FP8 + KV-FP16
+    extra_args+="--model-format fp8 "
+    extra_args+="--quant-policy 0 "
+
+  elif [ $precision = fp8-kv-fp8 ]; then
+    # FP8 + KV-FP8
+    extra_args+="--model-format fp8 "
+    extra_args+="--quant-policy 16 "
+  fi
+
   lmdeploy serve api_server \
     ${model_path} \
     --server-name ${service_name} \
@@ -63,9 +69,10 @@ elif [ $precision = w4a16 ]; then
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
     --session-len 4096 \
-    --max-batch-size 256 \
-    --model-format awq
+    --enable-prefix-caching \
+    --max-batch-size 256 ${extra_args}
+
 else
-  echo "Precision only supports fp16, w4a16 or kv8"
+  echo "precision only support fp16, w4a16, fp16-kv-int8, fp16-kv-fp8, fp8-kv-fp16, fp8-kv-fp8"
   exit
 fi
