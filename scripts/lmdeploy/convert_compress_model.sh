@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 if [ $# != 4 ]; then
-  echo "Usage: $0 model_path deploy_model_format(hf or turbomind) precision(fp16, w4a16 or kv8) device_id"
+  echo "Usage: $0 model_path deploy_model_format(hf or turbomind) precision(fp16, w4a16, w8a8 or fp8) device_id"
   exit
 fi
 
@@ -24,6 +24,16 @@ model_name_dir=$(basename ${MODEL_PATH%/})
 turbomind_model_path=${model_name_dir}-turbomind
 quant_turbomind_model_path=${model_name_dir}-${precision}-turbomind
 quant_hf_model_path=${model_name_dir}-${precision}-hf
+
+
+function align_transformers_version() {
+  local model_path=$1
+
+  echo "Align transformer version from ${model_path} ..."
+  transformers_version=$(grep 'transformers_version' ${model_path}/config.json | sed 's/.*"transformers_version": "\(.*\)",/\1/')
+  transformers_base_version=$(python3 -c "from packaging.version import parse; print(parse('${transformers_version}').base_version)")
+  python3 -m pip install --no-cache-dir transformers==${transformers_base_version}
+}
 
 # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/turbomind/deploy/converter.py#L205-L236
 function convert_turbomind(){
@@ -50,30 +60,38 @@ function convert_turbomind(){
 
 function quantize_model(){
   # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/cli/lite.py
-  local method=$1 # calibrate, auto_awq, smooth_quant
+  local method=$1 # calibrate, auto_awq, smooth_quant, auto_fp8
   local model_path=$2
   local dst_path=$3
 
-  if [ $method = calibrate ] || [ $method = smooth_quant ]; then
-    # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/calibrate.py#L113-L118
-    # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/smooth_quant.py#L67-L72
-    lmdeploy lite $method \
-      ${model_path} `# The name or path of the model to be loaded.` \
-      --calib-dataset 'wikitext2' \
-      --calib-samples 128 \
-      --calib-seqlen 2048 \
-      --work-dir ${dst_path}
+  extra_args=""
 
-  elif [ $method = auto_awq ]; then
-    # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/auto_awq.py#L32-L40
-    lmdeploy lite auto_awq \
-      ${model_path} `# The name or path of the model to be loaded.` \
-      --calib-dataset 'wikitext2' \
-      --calib-samples 128 \
-      --calib-seqlen 2048 \
-      --w-bits 4 \
-      --w-group-size 128 \
-      --work-dir ${dst_path}
+  if [ $method = calibrate ] || [ $method = smooth_quant ] || \
+     [ $method = auto_awq ] || [ $method = auto_fp8 ]; then
+
+       if [ $method = calibrate ] || [ $method = smooth_quant ]; then
+         # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/calibrate.py#L113-L118
+         # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/smooth_quant.py#L67-L72
+         extra_args+="--calib-dataset wikitext2 "
+
+      elif [ $method = auto_awq ]; then
+        # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/auto_awq.py
+        extra_args+="--calib-dataset wikitext2 "
+        extra_args+="--w-bits 4 "
+        extra_args+="--w-group-size 128 "
+
+      elif [ $method = auto_fp8 ]; then
+        # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/auto_fp8.py
+        extra_args+="--calib-dataset ultrachat_2k "
+        extra_args+="--act-scheme static " # static or dynamic
+       fi
+
+      lmdeploy lite $method \
+        ${model_path} `# The name or path of the model to be loaded.` \
+        --calib-samples 128 \
+        --calib-seqlen 2048 \
+        --work-dir ${dst_path} \
+        ${extra_args}
   else
     echo "quantization method only supports calibrate, auto_awq, smooth_quant."
     exit
@@ -86,20 +104,13 @@ if [ $deploy_model_format = turbomind ]; then
     convert_turbomind llama hf ${MODEL_PATH} 0 ${turbomind_model_path}
 
   elif [ $precision = w4a16 ]; then
-    # get hf model with quantization parameters
+    # get hf awq model with quantization parameters
     quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
 
     # convert hf-awq-quant models to turbomind format
     convert_turbomind llama awq ${quant_hf_model_path} 128 ${quant_turbomind_model_path}
-
-  elif [ $precision = kv8 ]; then
-    # Convert hf model to turbomind format
-    convert_turbomind llama hf ${MODEL_PATH} 0 ${quant_turbomind_model_path}
-
-    # Get the quantization parameters and save them to the turbomind model directory
-    quantize_model calibrate ${MODEL_PATH} ${quant_turbomind_model_path}/triton_models/weights
   else
-    echo "Precision only supports fp16, w4a16 or kv8"
+    echo "Precision only supports fp16, w4a16"
     exit
   fi
 elif [ $deploy_model_format = hf ]; then
@@ -107,20 +118,20 @@ elif [ $deploy_model_format = hf ]; then
     echo "LMDeploy supports loading HuggingFace models without model conversion."
     exit
 
-  elif [ $precision = w4a16 ]; then
-    transformers_version=$(grep 'transformers_version' ${MODEL_PATH}/config.json | sed 's/.*"transformers_version": "\(.*\)",/\1/')
-    transformers_base_version=$(python3 -c "from packaging.version import parse; print(parse('${transformers_version}').base_version)")
-    python3 -m pip install --no-cache-dir transformers==${transformers_base_version}
+  elif [ $precision = w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
+    align_transformers_version ${MODEL_PATH}
 
-    quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
+    if [ $precision = w4a16 ]; then
+      quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
 
-  elif [ $precision = kv8 ]; then
-    cp -r ${MODEL_PATH} ./${quant_hf_model_path}
+    elif [ $precision = w8a8 ]; then
+      quantize_model smooth_quant ${MODEL_PATH} ${quant_hf_model_path}
 
-    # Get the quantization parameters and save them to the hf model directory
-    quantize_model calibrate ${quant_hf_model_path} ${quant_hf_model_path}
+    elif [ $precision = fp8 ]; then
+      quantize_model auto_fp8 ${MODEL_PATH} ${quant_hf_model_path}
+    fi
   else
-    echo "Precision only supports fp16, w4a16 or kv8"
+    echo "Precision only supports fp16, w4a16 or fp8"
     exit
   fi
 else
