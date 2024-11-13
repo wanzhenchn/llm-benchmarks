@@ -22,7 +22,7 @@ if [ $1 = all ] || [ $1 = trtllm_src ]; then
   if [ ! -d tensorrtllm_backend ]; then
     git clone --recurse-submodules https://github.com/wanzhenchn/tensorrtllm_backend.git
   fi
-  cd tensorrtllm_backend && git checkout dev
+  cd tensorrtllm_backend && git submodule update --init --recursive && git checkout dev
 
   CUDA_ARCHS="80-real;90-real"
   GIT_COMMIT=$(git rev-parse HEAD)
@@ -46,7 +46,7 @@ if [ $1 = ngc ]; then
 elif [ $1 = all ]; then
   DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/tritonserver \
-           --build-arg BASE_TAG=24.09-py3 \
+           --build-arg BASE_TAG=24.10-py3 \
            --build-arg BUILD_WHEEL_ARGS="${BUILD_WHEEL_ARGS}" \
            --build-arg TORCH_INSTALL_TYPE="pypi" \
            --build-arg TRT_LLM_VER="${TRT_LLM_VERSION}" \
@@ -57,7 +57,7 @@ elif [ $1 = all ]; then
 elif [ $1 = trtllm_src ]; then
   DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch \
-           --build-arg BASE_TAG=24.09-py3 \
+           --build-arg BASE_TAG=24.10-py3 \
            --build-arg BUILD_WHEEL_ARGS="${BUILD_WHEEL_ARGS}" \
            --build-arg TORCH_INSTALL_TYPE="skip" \
            --build-arg TRT_LLM_VER="${TRT_LLM_VERSION}" \
