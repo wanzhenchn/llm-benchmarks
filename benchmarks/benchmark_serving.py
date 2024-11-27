@@ -427,6 +427,11 @@ def main(backend: str = "vllm",
     random.seed(seed)
     np.random.seed(seed)
 
+    # convert args to bool
+    for args in [trust_remote_code, disable_tqdm, save_result, debug_result,
+                 get_gpu_metrics]:
+        args = str(args).lower() == 'true'
+
     api_url = f"http://{host}:{port}{endpoint}"
     api_url_available_models = f"http://{host}:{port}/v1/models"
 
