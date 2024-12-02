@@ -20,13 +20,13 @@ fi
 
 if [ $1 = all ] || [ $1 = trtllm_src ]; then
   if [ ! -d tensorrtllm_backend ]; then
-    git clone --recurse-submodules https://github.com/wanzhenchn/tensorrtllm_backend.git
+    git clone --recurse-submodules https://github.com/wanzhenchn/TensorRT-LLM.git
   fi
-  cd tensorrtllm_backend && git submodule update --init --recursive && git checkout dev
+  cd TensorRT-LLM && git submodule update --init --recursive && git checkout dev
 
   CUDA_ARCHS="80-real;90-real"
   GIT_COMMIT=$(git rev-parse HEAD)
-  TRT_LLM_VERSION=$(grep '^__version__' tensorrt_llm/tensorrt_llm/version.py | grep -o '=.*' | tr -d '= "')
+  TRT_LLM_VERSION=$(grep '^__version__' tensorrt_llm/version.py | grep -o '=.*' | tr -d '= "')
   BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --python_bindings --benchmarks --cuda_architectures ${CUDA_ARCHS}"
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:${TRT_LLM_VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
 else
@@ -64,7 +64,7 @@ elif [ $1 = trtllm_src ]; then
            --build-arg GIT_COMMIT="${GIT_COMMIT}" \
            --target release \
            -t ${IMAGE_TAG} \
-           -f ../docker/Dockerfile.trt_llm_from_src ./tensorrt_llm
+           -f ../docker/Dockerfile.trt_llm_from_src .
 
 elif [ $1 = trtllm_pip ]; then
   docker build -t ${IMAGE_TAG} -f docker/Dockerfile.trt_llm_from_pip .
