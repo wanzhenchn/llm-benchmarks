@@ -26,13 +26,29 @@ quant_turbomind_model_path=${model_name_dir}-${precision}-turbomind
 quant_hf_model_path=${model_name_dir}-${precision}-hf
 
 
-function align_transformers_version() {
+function check_transformers_version() {
   local model_path=$1
 
   echo "Align transformer version from ${model_path} ..."
   transformers_version=$(grep 'transformers_version' ${model_path}/config.json | sed 's/.*"transformers_version": "\(.*\)",/\1/')
-  transformers_base_version=$(python3 -c "from packaging.version import parse; print(parse('${transformers_version}').base_version)")
-  python3 -m pip install --no-cache-dir transformers==${transformers_base_version}
+
+  python3 -c "
+import sys
+try:
+    import transformers
+    from packaging import version
+    current_version = transformers.__version__
+    target_version = '${transformers_version}'
+    if version.parse(current_version) < version.parse('${transformers_version}'):
+        sys.exit(1)
+    else:
+        sys.exit(0)
+except ImportError:
+    sys.exit(1)  # transformers isn't installed
+" || {
+    echo "Installing transformers==${transformers_version}"
+    python3 -m pip install --no-cache-dir transformers==${transformers_version}
+  }
 }
 
 # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/turbomind/deploy/converter.py#L205-L236
@@ -64,6 +80,8 @@ function quantize_model(){
   local model_path=$2
   local dst_path=$3
 
+  architecture=$(awk -F'["]' '/"architectures"/ {getline; print $2}' "${model_path}/config.json")
+
   extra_args=""
 
   if [ $method = calibrate ] || [ $method = smooth_quant ] || \
@@ -84,6 +102,10 @@ function quantize_model(){
         # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/auto_fp8.py
         extra_args+="--calib-dataset ultrachat_2k "
         extra_args+="--act-scheme static " # static or dynamic
+        if [ $architecture = MixtralForCausalLM ]; then
+          # for MoE models, skip quantization for *block_sparse_moe.gate layers
+          extra_args+="--ignored-layer-list lm_head re:.*block_sparse_moe.gate "
+        fi
        fi
 
       lmdeploy lite $method \
@@ -119,7 +141,7 @@ elif [ $deploy_model_format = hf ]; then
     exit
 
   elif [ $precision = w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
-    align_transformers_version ${MODEL_PATH}
+    check_transformers_version ${MODEL_PATH}
 
     if [ $precision = w4a16 ]; then
       quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
