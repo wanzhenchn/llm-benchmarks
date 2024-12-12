@@ -1,0 +1,24 @@
+ft_instance_hyperparameter:
+    data_type: fp16
+    enable_custom_all_reduce: 0
+    pipeline_para_size: 1
+    tensor_para_size: 1
+     # update model_dir path according to the actual situation
+    model_dir: Mixtral-8x7B-Instruct-v0.1-fp8-turbomind/triton_models/weights
+
+
+request:
+    request_batch_size: 1
+    max_input_len: 1024
+    request_output_len: 60
+    beam_width: 1  # beam width for beam search
+    top_k: 3  # k value for top k sampling
+    top_p: 0.95  # p value for top p sampling
+    temperature: 0.01  # Use for sampling
+    repetition_penalty: 1.15  # Use for sampling
+    presence_penalty: 0.0  # Only one of repetition_penalty and presence_penalty are allowed.
+    len_penalty: 0.0
+    beam_search_diversity_rate: 0.0
+    min_length: 0
+    start_id: 0
+    end_id: 1

@@ -12,7 +12,7 @@ if [ $# != 4 ]; then
   exit
 fi
 
-MODEL_PATH=$1
+MODEL_PATH="${1}/"
 deploy_model_format=$2
 precision=$3
 dev_id=$4
@@ -29,7 +29,7 @@ quant_hf_model_path=${model_name_dir}-${precision}-hf
 function check_transformers_version() {
   local model_path=$1
 
-  echo "Align transformer version from ${model_path} ..."
+  echo "Checking transformer version from ${model_path} ..."
   transformers_version=$(grep 'transformers_version' ${model_path}/config.json | sed 's/.*"transformers_version": "\(.*\)",/\1/')
 
   python3 -c "
@@ -131,8 +131,15 @@ if [ $deploy_model_format = turbomind ]; then
 
     # convert hf-awq-quant models to turbomind format
     convert_turbomind llama awq ${quant_hf_model_path} 128 ${quant_turbomind_model_path}
+
+  elif [ $precision = fp8 ]; then
+    # get hf fp8 model with quantization parameters
+    quantize_model auto_fp8 ${MODEL_PATH} ${quant_hf_model_path}
+
+    # convert hf-fp8-quant models to turbomind format
+    convert_turbomind llama fp8 ${quant_hf_model_path} 0 ${quant_turbomind_model_path}
   else
-    echo "Precision only supports fp16, w4a16"
+    echo "Precision only supports fp16, w4a16, fp8"
     exit
   fi
 elif [ $deploy_model_format = hf ]; then
