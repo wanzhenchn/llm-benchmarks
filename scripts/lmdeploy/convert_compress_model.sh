@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 if [ $# != 4 ]; then
-  echo "Usage: $0 model_path deploy_model_format(hf or turbomind) precision(fp16, w4a16, w8a8 or fp8) device_id"
+  echo "Usage: $0 model_path deploy_model_format(hf or turbomind, modelopt) precision(fp16, w4a16, w8a8 or fp8) device_id"
   exit
 fi
 
@@ -24,6 +24,9 @@ model_name_dir=$(basename ${MODEL_PATH%/})
 turbomind_model_path=${model_name_dir}-turbomind
 quant_turbomind_model_path=${model_name_dir}-${precision}-turbomind
 quant_hf_model_path=${model_name_dir}-${precision}-hf
+quant_modelopt_model_path=${model_name_dir}-${precision}-modelopt
+
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
 
 function check_transformers_version() {
@@ -82,7 +85,7 @@ function quantize_model(){
 
   architecture=$(awk -F'["]' '/"architectures"/ {getline; print $2}' "${model_path}/config.json")
 
-  extra_args=""
+  local extra_args=""
 
   if [ $method = calibrate ] || [ $method = smooth_quant ] || \
      [ $method = auto_awq ] || [ $method = auto_fp8 ]; then
@@ -121,6 +124,35 @@ function quantize_model(){
 }
 
 
+function modelopt_quantize_model() {
+  local model_path=$1
+  local dst_path=$2
+
+  local extra_args=""
+
+  if [ $precision = w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
+    if [ $precision = w4a16 ]; then
+      extra_args+="--qformat int4_awq "
+
+    elif [ $precision = w8a8 ]; then
+      extra_args+="--qformat int8_sq "
+
+    elif [ $precision = fp8 ]; then
+      extra_args+="--qformat fp8 "
+    fi
+    python3 ${SCRIPT_DIR}/modelopt_quantize.py \
+      --model-dir ${model_path} \
+      --output-dir ${dst_path} \
+      --calib-size 512 \
+      --dataset ultrachat_2k \
+      ${extra_args}
+  else
+    echo "Precision only supports w4a16, w8a8 or fp8"
+    exit 1
+  fi
+}
+
+
 if [ $deploy_model_format = turbomind ]; then
   if [ $precision = fp16 ]; then
     convert_turbomind llama hf ${MODEL_PATH} 0 ${turbomind_model_path}
@@ -140,7 +172,7 @@ if [ $deploy_model_format = turbomind ]; then
     convert_turbomind llama fp8 ${quant_hf_model_path} 0 ${quant_turbomind_model_path}
   else
     echo "Precision only supports fp16, w4a16, fp8"
-    exit
+    exit 1
   fi
 elif [ $deploy_model_format = hf ]; then
   if [ $precision = fp16 ]; then
@@ -161,9 +193,14 @@ elif [ $deploy_model_format = hf ]; then
     fi
   else
     echo "Precision only supports fp16, w4a16 or fp8"
-    exit
+    exit 1
   fi
+elif [ $deploy_model_format = modelopt ]; then
+  if [[ ! $(pip list | grep "nvidia-modelopt") ]]; then
+    pip install "nvidia-modelopt[all]~=0.19.0" --extra-index-url https://pypi.nvidia.com
+  fi
+  modelopt_quantize_model ${MODEL_PATH} ${quant_modelopt_model_path}
 else
-  echo "Deploying model only supports turbomind or hf format"
+  echo "Deploying model only supports turbomind, hf or modelopt format"
   exit
 fi
