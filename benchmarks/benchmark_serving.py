@@ -78,6 +78,9 @@ def read_dataset(dataset_name: str, dataset_path: str, num_requests: int,
         elif dataset_path.endswith("json"):
             with open(dataset_path, 'r') as fp:
                 prompts = json.load(fp)
+        elif dataset_path.endswith("xlsx"):
+            df = pd.read_excel(dataset_path, index_col=None)
+            prompts = list(df['question'])
         elif dataset_path.endswith("jsonl") or dataset_path.endswith("txt"):
             with open(dataset_path, 'r') as fp:
                 prompts = [json.loads(line)['data']['question'] for line in fp.readlines()]
@@ -428,9 +431,13 @@ def main(backend: str = "vllm",
     np.random.seed(seed)
 
     # convert args to bool
-    for args in [trust_remote_code, disable_tqdm, save_result, debug_result,
-                 get_gpu_metrics]:
-        args = str(args).lower() == 'true'
+    def to_bool(value):
+        return str(value).lower() == 'true'
+
+    args = [trust_remote_code, disable_tqdm, save_result,
+            debug_result, get_gpu_metrics]
+    trust_remote_code, disable_tqdm, save_result, debug_result, \
+        get_gpu_metrics = map(to_bool, args)
 
     api_url = f"http://{host}:{port}{endpoint}"
     api_url_available_models = f"http://{host}:{port}/v1/models"
