@@ -39,17 +39,17 @@ bls_config_path=${triton_model_dir%/}/tensorrt_llm_bls/config.pbtxt
 cp ${tokenizer_dir%/}/tokenizer* ${triton_model_dir}
 
 # fill config.pbtxt
-python ${fill_template} --in_place ${engine_config_path} \
-  triton_max_batch_size:${triton_max_batch_size},triton_backend:tensorrtllm,batching_strategy:inflight_fused_batching,engine_dir:${engine_path},batch_scheduler_policy:max_utilization,decoupled_mode:True,kv_cache_free_gpu_mem_fraction:${kv_cache_free_gpu_mem_fraction},max_beam_width:${max_beam_width},max_queue_delay_microseconds:${max_queue_delay_microseconds}
+python3 ${fill_template} --in_place ${engine_config_path} \
+  triton_max_batch_size:${triton_max_batch_size},triton_backend:tensorrtllm,batching_strategy:inflight_fused_batching,engine_dir:${engine_path},batch_scheduler_policy:max_utilization,decoupled_mode:True,kv_cache_free_gpu_mem_fraction:${kv_cache_free_gpu_mem_fraction},max_beam_width:${max_beam_width},max_queue_delay_microseconds:${max_queue_delay_microseconds},exclude_input_in_output:True,enable_kv_cache_reuse:False,encoder_input_features_data_type:TYPE_FP16,logits_datatype:TYPE_FP32
 
-python ${fill_template} --in_place ${preprocess_config_path} \
+python3 ${fill_template} --in_place ${preprocess_config_path} \
   tokenizer_dir:${triton_model_dir},triton_max_batch_size:${triton_max_batch_size},preprocessing_instance_count:1
 
-python ${fill_template} --in_place ${postprocess_config_path} \
+python3 ${fill_template} --in_place ${postprocess_config_path} \
   tokenizer_dir:${triton_model_dir},triton_max_batch_size:${triton_max_batch_size},postprocessing_instance_count:1
 
-python ${fill_template} --in_place ${ensemble_config_path} \
-  triton_max_batch_size:${triton_max_batch_size}
+python3 ${fill_template} --in_place ${ensemble_config_path} \
+  triton_max_batch_size:${triton_max_batch_size},logits_datatype:TYPE_FP32
 
-python ${fill_template} --in_place ${bls_config_path} \
-  triton_max_batch_size:${triton_max_batch_size},decoupled_mode:False,bls_instance_count:1,accumulate_tokens:False
+python3 ${fill_template} --in_place ${bls_config_path} \
+  triton_max_batch_size:${triton_max_batch_size},decoupled_mode:False,bls_instance_count:1,accumulate_tokens:False,logits_datatype:TYPE_FP32

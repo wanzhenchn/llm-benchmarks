@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=nvcr.io/nvidia/tritonserver
-ARG BASE_TAG=24.07-py3
+ARG BASE_TAG=24.11-py3
 
 FROM ${BASE_IMAGE}:${BASE_TAG} as base
 
@@ -71,16 +71,17 @@ WORKDIR /app/tensorrt_llm
 ARG SRC_DIR=/src/tensorrt_llm
 COPY --from=trt_llm_builder ${SRC_DIR}/build/tensorrt_llm*.whl .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install tensorrt_llm*.whl --extra-index-url https://pypi.nvidia.com && \
-    rm tensorrt_llm*.whl
+    pip3 install tensorrt_llm*.whl && rm tensorrt_llm*.whl
 COPY --from=trt_llm_builder ${SRC_DIR}/cpp/include include
 RUN ln -sv $(python3 -c 'import site; print(f"{site.getsitepackages()[0]}/tensorrt_llm/bin")') bin && \
     test -f bin/executorWorker && \
     ln -sv $(python3 -c 'import site; print(f"{site.getsitepackages()[0]}/tensorrt_llm/libs")') lib && \
     test -f lib/libnvinfer_plugin_tensorrt_llm.so && \
-    ln -sv lib/libnvinfer_plugin_tensorrt_llm.so lib/libnvinfer_plugin_tensorrt_llm.so.9 && \
     echo "/app/tensorrt_llm/lib" > /etc/ld.so.conf.d/tensorrt_llm.conf && \
     ldconfig
+# Test LD configuration
+RUN ! ( ldd -v bin/executorWorker | grep tensorrt_llm | grep -q "not found"  )
+
 COPY --from=trt_llm_builder ${SRC_DIR}/benchmarks benchmarks
 ARG CPP_BUILD_DIR=${SRC_DIR}/cpp/build
 COPY --from=trt_llm_builder \
@@ -107,6 +108,8 @@ ENV TRT_LLM_GIT_COMMIT=${GIT_COMMIT} TRT_LLM_VERSION=${TRT_LLM_VER}
 # Install TensorRT-LLM backend
 ARG BACKEND_DIR=/opt/tritonserver/backends/tensorrtllm
 ENV LD_LIBRARY_PATH=${BACKEND_DIR}:${LD_LIBRARY_PATH}
+
+RUN python3 -m pip install sentencepiece~=0.1.99 rouge_score~=0.1.2 datasets==2.14.6 --extra-index-url https://pypi.nvidia.com
 
 # Delete files
 RUN rm -rf /src  && cd /opt/tritonserver/backends && \

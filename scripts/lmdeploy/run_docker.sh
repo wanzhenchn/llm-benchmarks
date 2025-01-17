@@ -14,11 +14,11 @@ fi
 
 port=$1
 
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/lmdpeloy:0.4.2-arch_808990
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/lmdpeloy:0.6.2-arch_808990
 
 docker run -it --gpus all --privileged --shm-size=10g \
-            --ipc=host \
+            --ipc=host --network=host \
             -v ${PWD}:/workspace \
-            -v /data/:/data \
+            -v /:/data \
             -p ${port}:${port} \
-            --rm --name=lmdeploy-test-${port} ${IMAGE_TAG} /bin/bash
+            --rm --name=ld-test-${port} ${IMAGE_TAG} /bin/bash

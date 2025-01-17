@@ -137,31 +137,30 @@ function profile()
       --temperature 0.01 \
       --repetition_penalty 1.15 \
       --log_path ${log_path} \
-      --get_gpu_metrics True \
+      --get_gpu_metrics true \
       --get_gpu_metrics_freq 5 \
       --device_ids "$device_ids"
 }
 
 
-if [ $# != 5 ]; then
-  echo "Usage: $0 model_path data_path sample_num port device_id(0 or 0,1 or 2,3 or 0,1,2,3)"
+if [ $# != 7 ]; then
+  echo "Usage: $0 backend(lmdeploy/vllm/tensorrt-llm) model_path data_path sample_num port device_id(0 or 0,1) log_name"
  exit
 fi
 
-model_path=$1
-test_data=$2
-sample_num=$3
-port=$4
-device_id=$5
+BACKEND=$1
+model_path=$2
+test_data=$3
+sample_num=$4
+port=$5
+device_id=$6
+log_name=$7
 
 gpu_num=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
 
 service_name=0.0.0.0
 service_port=${port}
 
-BACKEND="lmdeploy"
-#BACKEND="vllm"
-#BACKEND="tensorrt-llm"
 if [ $BACKEND = "lmdeploy" ]; then
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/lmdpeloy:0.5.3-arch_808990
 elif [ $BACKEND = "vllm" ]; then
@@ -176,7 +175,7 @@ batch_size="1 2"
 
 for tp in ${tp_size};
 do
-  LOG_PATH=${BACKEND}-perf-tp${tp}.log
+  LOG_PATH=${BACKEND}-perf-${log_name}-tp${tp}.log
 
   for out_len in ${gen_len};
   do

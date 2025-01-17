@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 if [ $# != 6  ]; then
-  echo "Usage: $0 hf_model_path model_type(llama or moe) precision(fp16, kv-int8, awq-w4a16, awq-w4a16-kv-int8, sq-w8a8, fp8, w4aINT8) engine_path tp_size device_id(0,1)"
+  echo "Usage: $0 hf_model_path model_type(llama/qwen/moe) precision(fp16, kv-int8, awq-w4a16, awq-w4a16-kv-int8, sq-w8a8, fp8, w4aINT8) engine_path tp_size device_id(0,1)"
   exit
 fi
 
@@ -24,8 +24,21 @@ converted_ckpt_path=$(basename "$model_path")-tp${tp}-${precision}
 
 export CUDA_VISIBLE_DEVICES=${device_id}
 
-# Credit to: https://github.com/NVIDIA/TensorRT-LLM/tree/main/examples/llama
 
+function create_py_virtualenv {
+  local VENV_PATH=$1
+
+  if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+  else
+    echo "No virtual environment found in $VENV_PATH. Creating one..."
+    virtualenv -p `which python3` "$VENV_PATH"
+    source "$VENV_PATH/bin/activate"
+  fi
+}
+
+
+# Credit to: https://github.com/NVIDIA/TensorRT-LLM/tree/main/examples/llama
 function convert_checkpoint {
   local precision=$1
   local output_path=$2
@@ -45,22 +58,32 @@ function convert_checkpoint {
         extra_args+="--per_channel "
 
       elif [ $precision = w4aINT8 ]; then
-        # QServe w4a8: https://github.com/mit-han-lab/deepcompressor/tree/main/examples/llm
         qserve_ckpt_path=$(basename "$hf_model_path")-qserve-$precision
 
         if [ ! -d ${qserve_ckpt_path} ]; then
-          if [[ ! $(pip list | grep "deepcompressor") ]]; then
-            git clone https://github.com/mit-han-lab/deepcompressor.git && cd deepcompressor
-            # fix installation promblems
-            sed -i '/image_reward = { git = "git@github.com:THUDM\/ImageReward.git", branch = "main" }/c\image_reward = { git = "https://github.com/THUDM/ImageReward.git", branch = "main" }' pyproject.toml
-            pip install -e .
+          if [ -z "${VIRTUAL_ENV:-}" ]; then
+            PY3_ENV=/opt/py3_env
+            create_py_virtualenv $PY3_ENV
+
+            # QServe w4a8: https://github.com/mit-han-lab/deepcompressor/tree/main/examples/llm
+            if [[ ! $(pip list | grep "deepcompressor") ]]; then
+              git clone https://github.com/mit-han-lab/deepcompressor.git && cd deepcompressor
+              # fix installation promblems
+              sed -i '/image_reward = { git = "git@github.com:THUDM\/ImageReward.git", branch = "main" }/c\image_reward = { git = "https://github.com/THUDM/ImageReward.git", branch = "main" }' pyproject.toml
+              pip install -e . && cd -
+            fi
+
+            python3 -m deepcompressor.app.llm.ptq deepcompressor/examples/llm/configs/qoq-gchn.yaml \
+              --model-name $(basename "$hf_model_path") \
+              --model-path  ${hf_model_path} \
+              --smooth-proj-alpha 0 --smooth-proj-beta 1 \
+              --smooth-attn-alpha 0.5 --smooth-attn-beta 0 \
+              --save-model ${qserve_ckpt_path} \
+              --eval-evaluators lm_eval \
+              --eval-tasks gsm8k
+
+            deactivate
           fi
-          python -m deepcompressor.app.llm.ptq examples/llm/configs/qoq-gchn.yaml \
-            --model-name $(basename "$hf_model_path") \
-            --model-path  ${hf_model_path} \
-            --smooth-proj-alpha 0 --smooth-proj-beta 1 \
-            --smooth-attn-alpha 0.5 --smooth-attn-beta 0 \
-            --save-model ${qserve_ckpt_path}
         else
           echo "The converted qserve model already exits in ${qserve_ckpt_path}, skipped"
         fi
@@ -77,7 +100,7 @@ function convert_checkpoint {
 #        extra_args+="--moe_ep_size ${ep_size} "
       fi
 
-      python /app/tensorrt_llm/examples/llama/convert_checkpoint.py \
+      python3 /app/tensorrt_llm/examples/${model_type}/convert_checkpoint.py \
         --model_dir ${hf_model_path} \
   	    --tp_size ${tp_size} \
   	    --dtype float16 \
@@ -102,7 +125,7 @@ function convert_checkpoint {
         fi
       fi
 
-      python /app/tensorrt_llm/examples/quantization/quantize.py \
+      python3 /app/tensorrt_llm/examples/quantization/quantize.py \
         --model_dir ${hf_model_path} \
   	    --dtype float16 \
   	    --tp_size ${tp_size} \
@@ -163,14 +186,14 @@ function run_perf_summary {
   local tp_size=$3
 
   if [ $tp_size = 1 ]; then
-    python /app/tensorrt_llm/examples/summarize.py \
+    python3 /app/tensorrt_llm/examples/summarize.py \
       --test_trt_llm \
       --data_type fp16  \
       --hf_model_dir ${hf_model_path}  \
       --engine_dir ${trt_engine_path}
   else
      mpirun -n $tp_size --allow-run-as-root \
-       python /app/tensorrt_llm/examples/summarize.py \
+       python3 /app/tensorrt_llm/examples/summarize.py \
        --test_trt_llm \
        --data_type fp16  \
        --hf_model_dir ${hf_model_path}  \
@@ -183,7 +206,7 @@ function run_engine {
   local hf_model_path=$1
   local trt_engine_path=$2
 
-  python /app/tensorrt_llm/examples/run.py \
+  python3 /app/tensorrt_llm/examples/run.py \
     --engine_dir=${trt_engine_path} \
     --tokenizer_dir ${hf_model_path} \
     --input_text "What is machine learning?"

@@ -18,10 +18,10 @@ device_id=$3
 export CUDA_VISIBLE_DEVICES=${device_id}
 
 tp=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
-grpc_port=801
-metrics_port=802
+grpc_port=$(echo "${http_port} 1" | awk '{print int($1+$2)}')
+metrics_port=$(echo "${grpc_port} 1" | awk '{print int($1+$2)}')
 
-python /app/scripts/launch_triton_server.py \
+python3 /app/scripts/launch_triton_server.py \
   --http_port ${http_port} \
   --grpc_port ${grpc_port} \
   --metrics_port ${metrics_port} \
