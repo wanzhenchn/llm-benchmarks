@@ -112,7 +112,8 @@ function profile()
   local log_path=$5
   local device_ids=$6
 
-  if [ $backend = "vllm" ] || [ $backend = "lmdeploy" ]; then
+  if [ $backend = "vllm" ] || [ $backend = "lmdeploy" ] || \
+     [ $backend = "tensorrt-llm-openai" ]; then
     endpoint="/v1/completions"
   elif [ $backend = "tensorrt-llm" ]; then
     endpoint="/v2/models/ensemble/generate_stream"
@@ -137,7 +138,7 @@ function profile()
       --temperature 0.01 \
       --repetition_penalty 1.15 \
       --log_path ${log_path} \
-      --get_gpu_metrics true \
+      --get_gpu_metrics false \
       --get_gpu_metrics_freq 5 \
       --device_ids "$device_ids"
 }

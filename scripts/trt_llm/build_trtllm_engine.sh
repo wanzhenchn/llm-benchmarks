@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 if [ $# != 6  ]; then
-  echo "Usage: $0 hf_model_path model_type(llama/qwen/moe) precision(fp16, kv-int8, awq-w4a16, awq-w4a16-kv-int8, sq-w8a8, fp8, w4aINT8) engine_path tp_size device_id(0,1)"
+  echo "Usage: $0 hf_model_path model_type(llama/qwen/moe) precision(fp16, kv-int8, awq-w4a16, awq-w4a8, sq-w8a8, fp8, w4aINT8) engine_path tp_size device_id(0,1)"
   exit
 fi
 
@@ -100,20 +100,22 @@ function convert_checkpoint {
 #        extra_args+="--moe_ep_size ${ep_size} "
       fi
 
-      python3 /app/tensorrt_llm/examples/${model_type}/convert_checkpoint.py \
+      python3 /app/examples/${model_type}/convert_checkpoint.py \
         --model_dir ${hf_model_path} \
   	    --tp_size ${tp_size} \
   	    --dtype float16 \
   	    --output_dir ${output_path} ${extra_args}
 
-    elif [ $precision = awq-w4a16 ] || [ $precision = awq-w4a16-kv-int8 ] || [ $precision = fp8 ]; then
-      if [ $precision = awq-w4a16 ] || [ $precision = awq-w4a16-kv-int8 ]; then
-        extra_args+="--qformat int4_awq "
-        extra_args+="--awq_block_size 128 "
-        extra_args+="--calib_size 32 "
-        if [ $precision = awq-w4a16-kv-int8 ]; then
-          extra_args+="--kv_cache_dtype int8"
+    elif [ $precision = awq-w4a16 ] || [ $precision = awq-w4a8 ] || [ $precision = fp8 ]; then
+      if [ $precision = awq-w4a16 ] || [ $precision = awq-w4a8 ]; then
+        if [ $precision = awq-w4a8 ]; then
+          extra_args+="--qformat w4a8_awq "
+        else
+          extra_args+="--qformat int4_awq "
+          extra_args+="--awq_block_size 128 "
         fi
+        extra_args+="--calib_size 512 "
+        extra_args+="--kv_cache_dtype int8"
       elif [ $precision = fp8 ]; then
         extra_args+="--qformat fp8 "
         extra_args+="--kv_cache_dtype fp8 "
@@ -121,11 +123,11 @@ function convert_checkpoint {
 
         if [[ ! $(pip list | grep "nvidia-modelopt") ]]; then
           # NVIDIA Modelopt (AlgorithMic Model Optimization) toolkit for the model quantization process.
-          pip install "nvidia-modelopt[all]~=0.19.0" --extra-index-url https://pypi.nvidia.com
+          pip install "nvidia-modelopt[all]~=0.23.0" --extra-index-url https://pypi.nvidia.com
         fi
       fi
 
-      python3 /app/tensorrt_llm/examples/quantization/quantize.py \
+      python3 /app/examples/quantization/quantize.py \
         --model_dir ${hf_model_path} \
   	    --dtype float16 \
   	    --tp_size ${tp_size} \
@@ -143,10 +145,11 @@ function build_tensorrt_engine {
   # https://github.com/NVIDIA/TensorRT-LLM/blob/main/docs/source/performance/perf-best-practices.md
   local precision=$1
   local converted_checkpoint=$2
-  local max_batch_size=$3
-  local max_seq_len=$4
-  local max_num_tokens=$5
-  local output_path=$6
+  local hf_model_path=$3
+  local max_batch_size=$4
+  local max_seq_len=$5
+  local max_num_tokens=$6
+  local output_path=$7
 
   # If no nvlink, disable custom all reduce.
   extra_args=""
@@ -171,12 +174,15 @@ function build_tensorrt_engine {
     --max_seq_len ${max_seq_len} \
     --max_num_tokens ${max_num_tokens} \
     --remove_input_padding enable \
-    --paged_kv_cache enable \
+    --kv_cache_type=paged
     --multiple_profiles enable \
     --workers 4 \
     --output_dir ${output_path} \
     ${extra_args}
 #    --gpt_attention_plugin float16 \
+
+  # copy tokenizer model to engine path for launching OpenAI-Compatible server
+  cp ${hf_model_path}/tokenizer* ${output_path}
 }
 
 
@@ -186,14 +192,14 @@ function run_perf_summary {
   local tp_size=$3
 
   if [ $tp_size = 1 ]; then
-    python3 /app/tensorrt_llm/examples/summarize.py \
+    python3 /app/examples/summarize.py \
       --test_trt_llm \
       --data_type fp16  \
       --hf_model_dir ${hf_model_path}  \
       --engine_dir ${trt_engine_path}
   else
      mpirun -n $tp_size --allow-run-as-root \
-       python3 /app/tensorrt_llm/examples/summarize.py \
+       python3 /app/examples/summarize.py \
        --test_trt_llm \
        --data_type fp16  \
        --hf_model_dir ${hf_model_path}  \
@@ -206,7 +212,7 @@ function run_engine {
   local hf_model_path=$1
   local trt_engine_path=$2
 
-  python3 /app/tensorrt_llm/examples/run.py \
+  python3 /app/examples/run.py \
     --engine_dir=${trt_engine_path} \
     --tokenizer_dir ${hf_model_path} \
     --input_text "What is machine learning?"
@@ -226,6 +232,6 @@ max_seq_len=$(echo "${max_input_len} ${max_output_len}" | awk '{print int($1+$2)
 max_num_tokens=8192
 
 convert_checkpoint ${precision} ${converted_ckpt_path} ${model_path} ${tp}
-build_tensorrt_engine ${precision} ${converted_ckpt_path} ${max_batch_size} ${max_seq_len} ${max_num_tokens} ${engine_path}
+build_tensorrt_engine ${precision} ${converted_ckpt_path} ${model_path} ${max_batch_size} ${max_seq_len} ${max_num_tokens} ${engine_path}
 run_perf_summary ${model_path} ${engine_path} ${tp}
 # run_engine ${model_path} ${engine_path}
