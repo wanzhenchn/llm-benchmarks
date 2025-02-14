@@ -13,11 +13,12 @@ set -euxo pipefail
 
 host_name=0.0.0.0
 
-if [ $# = 4 ]; then
-  mode=$1
-  model_path=$2
+if [ $# = 5 ]; then
+  model_path=$1
+  mode=$2
   port=$3
-  device_id=${!#}
+  device_id=$4
+  engine_type=$5
 
   gpu_num=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
   export CUDA_VISIBLE_DEVICES=$device_id
@@ -31,8 +32,6 @@ if [ $# = 4 ]; then
 
     if [ $mode = fp8-kv-fp8 ] || [ $mode = kv-fp8 ]; then
       extra_args+="--kv-cache-dtype fp8 "
-    else
-      extra_args+="--enable-prefix-caching "
     fi
 
   else
@@ -40,21 +39,30 @@ if [ $# = 4 ]; then
     exit
   fi
 
+
+  if [ $engine_type = 0 ]; then
+    extra_args+="--num-scheduler-steps 8 "
+  else
+    export VLLM_USE_V1=1
+  fi
+
+  export VLLM_WORKER_MULTIPROC_METHOD="spawn"
   python3 -m vllm.entrypoints.openai.api_server \
     --host ${host_name} \
     --port $port \
     --model ${model_path} \
     -tp ${gpu_num} \
     --max-model-len 4096 \
-    --max-num-seqs 512 `# How many requests can be batched into a single model run` \
+    --max-num-seqs 256 `# How many requests can be batched into a single model run` \
     --gpu-memory-utilization 0.9 \
     --swap-space 16 `# CPU swap space size (GiB) per GPU.` \
     --trust-remote-code \
     --disable-log-stats \
     --disable-log-requests \
+    --no-enable-prefix-caching \
     ${extra_args}
 #    --enforce-eager `# By default it's not eager mode, If it's not set, it uses cuda_graph`
 else
-  echo "Usage1: $0 mode(fp16, w4a16 or fp8-kv-fp8, fp8-kv-fp16) model_path port device_id(0 or 0,1 or 1,3)"
+  echo "Usage1: $0 model_path mode(fp16, w4a16 or fp8-kv-fp8, fp8-kv-fp16) port device_id(0 or 0,1) engine_type(0 or 1)"
   exit
 fi

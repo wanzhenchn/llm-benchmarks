@@ -24,6 +24,7 @@ converted_ckpt_path=$(basename "$model_path")-tp${tp}-${precision}
 
 export CUDA_VISIBLE_DEVICES=${device_id}
 
+TRT_LLM_EXAMPLE_PATH=/app/tensorrt_llm/examples
 
 function create_py_virtualenv {
   local VENV_PATH=$1
@@ -100,7 +101,7 @@ function convert_checkpoint {
 #        extra_args+="--moe_ep_size ${ep_size} "
       fi
 
-      python3 /app/examples/${model_type}/convert_checkpoint.py \
+      python3 ${TRT_LLM_EXAMPLE_PATH}/${model_type}/convert_checkpoint.py \
         --model_dir ${hf_model_path} \
   	    --tp_size ${tp_size} \
   	    --dtype float16 \
@@ -127,7 +128,7 @@ function convert_checkpoint {
         fi
       fi
 
-      python3 /app/examples/quantization/quantize.py \
+      python3 ${TRT_LLM_EXAMPLE_PATH}/quantization/quantize.py \
         --model_dir ${hf_model_path} \
   	    --dtype float16 \
   	    --tp_size ${tp_size} \
@@ -174,12 +175,11 @@ function build_tensorrt_engine {
     --max_seq_len ${max_seq_len} \
     --max_num_tokens ${max_num_tokens} \
     --remove_input_padding enable \
-    --kv_cache_type=paged
+    --kv_cache_type=paged \
     --multiple_profiles enable \
     --workers 4 \
     --output_dir ${output_path} \
     ${extra_args}
-#    --gpt_attention_plugin float16 \
 
   # copy tokenizer model to engine path for launching OpenAI-Compatible server
   cp ${hf_model_path}/tokenizer* ${output_path}
@@ -192,14 +192,14 @@ function run_perf_summary {
   local tp_size=$3
 
   if [ $tp_size = 1 ]; then
-    python3 /app/examples/summarize.py \
+    python3 ${TRT_LLM_EXAMPLE_PATH}/summarize.py \
       --test_trt_llm \
       --data_type fp16  \
       --hf_model_dir ${hf_model_path}  \
       --engine_dir ${trt_engine_path}
   else
      mpirun -n $tp_size --allow-run-as-root \
-       python3 /app/examples/summarize.py \
+       python3 ${TRT_LLM_EXAMPLE_PATH}/summarize.py \
        --test_trt_llm \
        --data_type fp16  \
        --hf_model_dir ${hf_model_path}  \
@@ -212,10 +212,10 @@ function run_engine {
   local hf_model_path=$1
   local trt_engine_path=$2
 
-  python3 /app/examples/run.py \
+  python3 ${TRT_LLM_EXAMPLE_PATH}/run.py \
     --engine_dir=${trt_engine_path} \
     --tokenizer_dir ${hf_model_path} \
-    --input_text "What is machine learning?"
+    --input_text "What is machine learning?" \
     --max_output_len 50 \
     --streaming \
     --top_k 3 \
