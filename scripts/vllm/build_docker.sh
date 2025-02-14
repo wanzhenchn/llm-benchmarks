@@ -20,11 +20,12 @@ VERSION=$(echo "$VERSION" | sed 's/\.d[0-9]\{8\}//' | sed 's/+\(g\)\?/-/')
 cuda_arch_list="7.0 8.0 9.0"
 arch=arch_$(echo $cuda_arch_list | tr -d -c 0-9)
 
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/vllm:${VERSION}-${arch}
+IMAGE_ADDR=registry.cn-beijing.aliyuncs.com/devel-img/vllm
+IMAGE_TAG=${VERSION}-${arch}
 
 docker build --pull \
   --build-arg torch_cuda_arch_list="$cuda_arch_list" \
-  -t ${IMAGE_TAG} \
+  -t ${IMAGE_ADDR}:${IMAGE_TAG} \
   -f ../docker/Dockerfile.vllm .
 
 docker push $IMAGE_TAG

@@ -17,7 +17,7 @@
 # 4. Change the values for the REGION_ID, REGISTRY, NAMESPACE, IMAGE, ACK_CLUSTER_ID, and ACK_DEPLOYMENT_NAME.
 #
 
-name: Build_TRTLLM_Image
+name: Build_TRTLLM_Image_Trition
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
     - name: Clean up disk space
       run: |
         echo -e "\nBefore removing files:"
-        df -h
+        df -h && pwd && df -h .
         sudo rm -rf /usr/share/dotnet /usr/share/swift /usr/share/miniconda /usr/share/az_*
         sudo rm -rf /usr/lib/google-cloud-sdk
         sudo rm -rf /usr/local/share/powershell /usr/local/share/chromium
@@ -46,8 +46,13 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache /opt/google /opt/microsoft /opt/az /opt/ghc
         sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
+        sudo swapoff -a
+        sudo rm -f /swapfile
+        sudo apt clean
+        docker image ls -aq | xargs -r docker rmi
+
         echo -e "\nAfter removing files:"
-        df -h
+        df -h && pwd && df -h .
 
     # 1.1 Clone repo
     - name: Clone llm-benchmarks
@@ -57,7 +62,7 @@ jobs:
     - name: Build and push image to ACR
       run: |
         echo -e "\nWorkspace path:"
-        pwd
+        df -h && pwd && df -h .
         tree -L 1
 
         export AWS_EC2_METADATA_DISABLED=true
@@ -65,4 +70,3 @@ jobs:
         docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
 
         bash scripts/trt_llm/build_docker.sh all
-        #        bash scripts/trt_llm/build_docker.sh trtllm_src

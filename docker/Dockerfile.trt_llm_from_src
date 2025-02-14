@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile
 ARG BASE_IMAGE=nvcr.io/nvidia/pytorch
-ARG BASE_TAG=24.11-py3
+ARG BASE_TAG=25.01-py3
 ARG DEVEL_IMAGE=devel
 
 FROM ${BASE_IMAGE}:${BASE_TAG} as base
@@ -107,3 +107,5 @@ ARG GIT_COMMIT
 ARG TRT_LLM_VER
 ENV TRT_LLM_GIT_COMMIT=${GIT_COMMIT} \
     TRT_LLM_VERSION=${TRT_LLM_VER}
+
+RUN python3 -m pip install sentencepiece~=0.1.99 rouge_score~=0.1.2 datasets==2.14.6 --extra-index-url https://pypi.nvidia.com
