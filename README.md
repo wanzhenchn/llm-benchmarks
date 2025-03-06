@@ -10,6 +10,7 @@ LLM-Benchmarks
 <div align="left">
 
 ## Latest News 🔥
+- [2025/03/06] Switched from [v1/completions](https://platform.openai.com/docs/api-reference/completions/create) to [v1/chat/completions](https://platform.openai.com/docs/api-reference/chat/create) API for openai compatible server on LLM and MLLM.
 - [2024/07/04] Support for evaluation with [vLLM](https://github.com/vllm-project/vllm/) backend using [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness).
 - [2024/06/21] Added support for inference performance benchmark with [LMDeploy](https://github.com/InternLM/lmdeploy) and [vLLM](https://github.com/vllm-project/vllm/).
 - [2024/06/14] Added support for inference performance benchmark with [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
@@ -52,9 +53,9 @@ or use the available images by `docker pull ${Image}:${Tag}`:
 
 | Image                                                   | Tag                              |
 |---------------------------------------------------------|----------------------------------|
-| registry.cn-beijing.aliyuncs.com/devel-img/lmdeploy     | 0.5.3-arch_808990                |
-| registry.cn-beijing.aliyuncs.com/devel-img/vllm         | 0.5.4-arch_70808990              |
-| registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm | 0.13.0.dev2024082000-arch_808990 |
+| registry.cn-beijing.aliyuncs.com/devel-img/lmdeploy     | 0.6.2-arch_808990                |
+| registry.cn-beijing.aliyuncs.com/devel-img/vllm         | 0.6.3.post2.dev59-6c5af09b-arch_808990              |
+| registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm | 0.17.0.dev2024121700-arch_8090 |
 
 
 ### Run benchmarks
@@ -62,7 +63,8 @@ or use the available images by `docker pull ${Image}:${Tag}`:
 - Inference Performance
 ```bash
 # Please confirm the version of the image used in the script
-bash run_benchmark.sh model_path dataset_path sample_num device_id(like 0 or 0,1)
+pip3 install -r requirements.txt
+bash run_benchmark.sh backend(lmdeploy/vllm/tensorrt-llm) model_path model_type(llm/vlm) dataset_path dataset_name port device_id(0 or 0,1) log_name
 
 ```
 

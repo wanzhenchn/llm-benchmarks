@@ -12,20 +12,18 @@ import asyncio
 import requests
 import logging
 from dataclasses import dataclass
-from datetime import datetime
-from typing import List, Tuple, Optional, Callable
+import base64
+from PIL import Image
+from typing import List, Tuple, Optional, Callable, Any, Union, AsyncGenerator
 import numpy as np
 import pandas as pd
 import tabulate
 import fire
 from tqdm.asyncio import tqdm
-from transformers import PreTrainedTokenizerBase
 
 from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
                                   RequestFuncOutput)
-from tokenizer import get_tokenizer
 
-from tools import get_metrics
 
 @dataclass
 class BenchmarkMetrics:
@@ -38,6 +36,7 @@ class BenchmarkMetrics:
     request_throughput: float
     input_throughput: float
     output_throughput: float
+    decode_throughtput_per_user: float
     mean_ttft: float
     median_ttft: float
     p99_ttft: float
@@ -58,72 +57,49 @@ class BenchmarkMetrics:
     dram_active: float
 
 
+def download_image(url:str, cache_dir:str="image_cache", retry:int=3):
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
 
-def read_dataset(dataset_name: str, dataset_path: str, num_requests: int,
-                 tokenizer: PreTrainedTokenizerBase) -> List[Tuple[str, int]]:
-    start = time.perf_counter()
-    # for ShareGPT dataset
-    if dataset_name is not None:
-        assert dataset_name == "sharegpt", "Only support the ShareGPT dataset"
-        with open(dataset_path, 'r') as f:
-            prompts = json.load(f)
-        # Filter out the conversations with less than 2 turns.
-        dataset = [data for data in prompts
-                   if len(data["conversations"]) >= 2]
-        prompts = [data["conversations"][0]["value"] for data in dataset]
+    file_name = url.split('/')[-1]
+    file_path = os.path.join(cache_dir, file_name)
+    if os.path.exists(file_path):
+        logging.info(f"Image already exists in cache: {file_path}")
+        with open(file_path, "rb") as fd:
+            image_bin = fd.read()
     else:
-        if dataset_path.endswith("csv"):
-            df = pd.read_csv(dataset_path, index_col=None)
-            prompts = list(df['prompt'])
-        elif dataset_path.endswith("json"):
-            with open(dataset_path, 'r') as fp:
-                prompts = json.load(fp)
-        elif dataset_path.endswith("xlsx"):
-            df = pd.read_excel(dataset_path, index_col=None)
-            prompts = list(df['question'])
-        elif dataset_path.endswith("jsonl") or dataset_path.endswith("txt"):
-            with open(dataset_path, 'r') as fp:
-                prompts = [json.loads(line)['data']['question'] for line in fp.readlines()]
+        mtries = retry
+        while mtries > 0:
+            try:
+                response = requests.get(
+                    url, stream=True, headers={"Connection": "close"}, timeout=10)
+                if response.status_code == 200:
+                    with open(file_path, 'wb') as f:
+                        f.write(response.content)
+                    image_bin = response.content
+                    break
+            except Exception as e:
+                mtries -= 1
         else:
-            assert False, f"{dataset_path} format not supported"
+            raise Exception(f"Failed to retrieve image from URL {url}")
 
-    logging.info(f'elapsed time for read {dataset_path}: '
-                 f'{round(time.perf_counter() - start, 2)}s')
-
-    num_req = min(num_requests, len(prompts))
-    if num_req > 0:
-        dataset_sampled = random.sample(prompts, num_req)
-    else:
-        logging.error('samples number should > 0')
-
-    filtered_dataset: List[Tuple[str, int]] = []
-    # Tokenize the prompts
-    for prompt in dataset_sampled:
-        prompt_token_ids = tokenizer(prompt).input_ids
-        prompt_len = len(prompt_token_ids)
-        filtered_dataset.append((prompt, prompt_len))
-
-    # expand filtered_dataset to 200 if num_req < 200
-    expanded_dataset = filtered_dataset
-    while len(expanded_dataset) < 200:
-        selected_item = random.choice(filtered_dataset)
-        expanded_dataset.append(selected_item)
-
-    logging.info(f'Request data num: {num_requests}, actual data num: {num_req}'
-                 f', expanded data num: {len(expanded_dataset)}')
-    return expanded_dataset
+    image = Image.open(BytesIO(image_bin))
+    buffered = BytesIO()
+    image = image.convert("RGB")
+    image.save(buffered, format="JPEG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    width, height = image.size
+    return img_base64, width, height
 
 
-def save_to_jsonl(jsonl_path: str,
-                  outputs: List[RequestFuncOutput],
-                  tokenizer: PreTrainedTokenizerBase):
+def save_to_jsonl(jsonl_path: str, outputs: List[RequestFuncOutput]):
     data = []
     for i in range(len(outputs)):
         if outputs[i].success:
             prompt = outputs[i].prompt
             prompt_len = outputs[i].prompt_len
+            output_len = outputs[i].output_len
             generated_text = outputs[i].generated_text
-            output_len = len(tokenizer(generated_text).input_ids)
             data.append(
                 {"prompt": prompt,
                  "generated_text": generated_text,
@@ -138,14 +114,137 @@ def save_to_jsonl(jsonl_path: str,
     logging.info(f'Requested len(data) results have been saved in {jsonl_path}')
 
 
+def expand_dataset(input_requests: List[Tuple[str, Union[List[dict], None]]],
+                   batch_size: int, enable_expand_dataset: bool = False):
+    ratio = 1
+    expand_input_requests = input_requests
+    dataset_num = len(input_requests)
+    if enable_expand_dataset:
+        logging.info('Set enable_expand_dataset = True')
+        while dataset_num < 3 * batch_size:
+            ratio *= 2
+            expand_input_requests = input_requests * ratio
+            dataset_num = len(expand_input_requests)
+        if ratio > 1:
+            logging.info(f'Expand the dataset by {ratio} times for batch_size={batch_size}.')
+            logging.info(f'(After expanded) Requests #dataset: {len(expand_input_requests)}')
+            logging.warning('If the service has enabled the prefix-caching feature, '\
+                            'expanding the dataset may have a certain impact on '\
+                            'test data of efficiency evaluation.')
+        else:
+            logging.warning(f'The dataset num {len(expand_input_requests)} is enough '
+                            f'for batch size {batch_size}, it does not need to be expanded.')
+    return expand_input_requests
+
+
+def read_dataset(dataset_name: str,
+                 dataset_path: str) -> List[Tuple[str, None]]:
+    start = time.perf_counter()
+    # for ShareGPT dataset
+    if dataset_name is not None:
+        assert dataset_name == "sharegpt", "Only support the ShareGPT dataset"
+        with open(dataset_path, 'r', encoding='utf-8') as f:
+            prompts = json.load(f)
+        # Filter out the conversations with less than 2 turns.
+        dataset = [data for data in prompts
+                   if len(data["conversations"]) >= 2]
+        prompts = [data["conversations"][0]["value"] for data in dataset]
+    else:
+        if dataset_path.endswith("csv"):
+            df = pd.read_csv(dataset_path, index_col=None)
+            prompts = list(df['prompt'])
+        elif dataset_path.endswith("json"):
+            with open(dataset_path, 'r', encoding='utf-8') as fp:
+                prompts = json.load(fp)
+        elif dataset_path.endswith("xlsx"):
+            df = pd.read_excel(dataset_path, index_col=None)
+            prompts = list(df['question'])
+        elif dataset_path.endswith("jsonl") or dataset_path.endswith("txt"):
+            with open(dataset_path, 'r', encoding='utf-8') as fp:
+                prompts = [json.loads(line)['data']['question'] \
+                           for line in fp.readlines()]
+        else:
+            assert False, f"{dataset_path} format not supported"
+
+    logging.info(f'elapsed time for read {dataset_path}: '
+                 f'{round(time.perf_counter() - start, 2)}s')
+
+    input_requests = []
+    for prompt in prompts:
+        input_requests.append((prompt, None))
+
+    logging.info(f'(Before expanded) Requests #dataset: {len(input_requests)}')
+    return input_requests
+
+
+def read_vlm_dataset(dataset_name: str,
+                     dataset_path: str,
+                     use_base64: bool=False) -> List[Tuple[str,List[dict]]]:
+    start = time.perf_counter()
+    if dataset_path.endswith("csv"):
+        df = pd.read_csv(dataset_path, index_col=None)
+        prompts = list(df['prompt'])
+        image_urls = list(map(lambda x: x.split(","), list(df['image_url'])))
+        samples = list(zip(prompts, image_urls))
+    else:
+        assert False, f"{dataset_path} format only supports csv file which " \
+                      "consists of column named 'prompt' and 'image_url'."
+
+    logging.info(f'elapsed time for read {dataset_id}: '
+                 f'{round(time.perf_counter() - start, 2)}s')
+
+    # request with img_base64 example:
+    # - vllm: https://github.com/vllm-project/vllm/blob/main/examples/online_serving/openai_chat_completion_client_for_multimodal.py
+    # Multi-image for future, current LLM inference may not support prompt with multi-images
+    input_requests = []
+    for (prompt, image_urls) in samples:
+        mm_content = []
+        for image_url in image_urls:
+            img_base64, _, _ = download_image(image_url)
+            mm_content.append(
+                {
+                    'type': 'image_url',
+                    'image_url': {
+                        'url': f"{image_url}" if not use_base64 else f'data:image/jpeg;base64,{img_base64}'
+                    }
+                }
+            )
+        input_requests.append((prompt, mm_content))
+
+    logging.info(f'(Before expanded) Requests #dataset: {len(input_requests)}')
+    return input_requests
+
+
+async def get_request(
+    input_requests: List[Tuple[str, Union[List[dict], None]]],
+    request_rate: float,
+    burstiness: float = 1.0,
+) -> AsyncGenerator[Tuple[str, Union[List[dict], None]], None]:
+    input_requests = iter(input_requests)
+    assert burstiness > 0, (
+        f"A positive burstiness factor is expected, but given {burstiness}.")
+    theta = 1.0 / (request_rate * burstiness)
+    for request in input_requests:
+        yield request
+
+        if request_rate == float("inf"):
+            # If the request rate is infinity, then we don't need to wait.
+            continue
+
+        # Sample the request interval from the exponential distribution.
+        interval = np.random.gamma(shape=burstiness, scale=theta)
+        # The next request will be sent after the interval.
+        await asyncio.sleep(interval)
+
+
 def calculate_metrics(outputs: List[RequestFuncOutput],
                       dur_s: float,
-                      tokenizer: PreTrainedTokenizerBase,
                       gpu_metrics: dict,
                       ) -> Tuple[BenchmarkMetrics, List[int]]:
     actual_output_lens = []
     total_input = 0
     completed = 0
+    decode_throughtput: List[float] = [] # token/user/sec
     itls: List[float] = []
     tpots: List[float] = []
     ttfts: List[float] = []
@@ -153,16 +252,19 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
 
     for i in range(len(outputs)):
         if outputs[i].success:
-            output_len = len(tokenizer(
-                outputs[i].generated_text, add_special_tokens=False).input_ids)
+            output_len = outputs[i].output_len
             actual_output_lens.append(output_len)
-            res_latency.append(outputs[i].latency)
             total_input += outputs[i].prompt_len
+            tpot = 0
+            decode_tps = 0
             if output_len > 1:
-                tpots.append(
-                    (outputs[i].latency - outputs[i].ttft) / (output_len - 1))
+                tpot = (outputs[i].latency - outputs[i].ttft) / (output_len - 1)
+                decode_tps = 1.0 / tpot
+            tpots.append(tpot)
+            decode_throughtput.append(decode_tps)
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
+            res_latency.append(outputs[i].latency)
             completed += 1
         else:
             actual_output_lens.append(0)
@@ -178,6 +280,7 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
         request_throughput=completed / dur_s,
         input_throughput=total_input / dur_s,
         output_throughput=sum(actual_output_lens) / dur_s,
+        decode_throughtput_per_user=np.mean(decode_throughtput),
         # ttfts is empty if streaming is not supported by backend
         mean_ttft=np.mean(ttfts or 0) * 1000,
         median_ttft=np.median(ttfts or 0) * 1000,
@@ -203,6 +306,39 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
     return metrics, actual_output_lens
 
 
+async def process(sem: asyncio.Semaphore,
+                  api_url: str,
+                  model_id: str,
+                  prompt: str,
+                  mm_content: Union[List[dict], None],
+                  request_func: Callable,
+                  req_output_len: int,
+                  top_k: int,
+                  top_p: float,
+                  repetition_penalty: float,
+                  temperature: float,
+                  best_of: int,
+                  pbar: Optional[tqdm] = None,
+                  ):
+    async with sem:  # Ensure only max_concurrency tasks run in parallel
+        request_func_input = RequestFuncInput(
+            model=model_id,
+            prompt=prompt,
+            multi_modal_content=mm_content,
+            api_url=api_url,
+            request_output_len=req_output_len,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            temperature=temperature,
+            best_of=best_of,
+            )
+        # Call the request function directly here and return its result
+        return await request_func(
+            request_func_input=request_func_input, pbar=pbar
+        )
+
+
 async def warmup(model_id: str,
                  api_url: str,
                  request_func: Callable,
@@ -221,12 +357,12 @@ async def warmup(model_id: str,
         input_requests = input_requests[:max_concurrency]
         semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
         tasks = []
-        for prompt, prompt_len in input_requests:
+        for prompt, mm_content in input_requests:
             tasks.append(
                 asyncio.create_task(
-                    process(semaphore, api_url, model_id, prompt, prompt_len,
+                    process(semaphore, api_url, model_id, prompt, mm_content,
                             request_func, req_output_len, top_k, top_p,
-                            repetition_penalty, temperature, 1, False, None)
+                            repetition_penalty, temperature, 1, None)
                 )
             )
         outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
@@ -235,44 +371,8 @@ async def warmup(model_id: str,
     logging.info(f'end warmup, elapsed time: {round(_end - _start, 2)} s')
 
 
-async def process(sem: asyncio.Semaphore,
-                  api_url: str,
-                  model_id: str,
-                  prompt: str,
-                  prompt_len: int,
-                  request_func: Callable,
-                  req_output_len: int,
-                  top_k: int,
-                  top_p: float,
-                  repetition_penalty: float,
-                  temperature: float,
-                  best_of: int,
-                  use_beam_search: bool,
-                  pbar: Optional[tqdm] = None,
-                  ):
-    async with sem:  # Ensure only max_concurrency tasks run in parallel
-        request_func_input = RequestFuncInput(
-            model=model_id,
-            prompt=prompt,
-            prompt_len=prompt_len,
-            api_url=api_url,
-            request_output_len=req_output_len,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-            temperature=temperature,
-            best_of=best_of,
-            use_beam_search=use_beam_search
-            )
-        # Call the request function directly here and return its result
-        return await request_func(
-            request_func_input=request_func_input, pbar=pbar
-        )
-
-
 async def benchmark(api_url: str,
                     model_id: str,
-                    tokenizer: PreTrainedTokenizerBase,
                     request_func: Callable,
                     max_concurrency: int,
                     input_requests: List[Tuple[str, int]],
@@ -282,32 +382,34 @@ async def benchmark(api_url: str,
                     repetition_penalty: float,
                     temperature: float,
                     best_of: int,
-                    use_beam_search: bool,
                     disable_tqdm: bool,
                     save_result: bool,
                     debug_result: bool,
                     log_path: str,
                     get_gpu_metrics: bool,
                     get_gpu_metrics_freq: int,
-                    device_ids: str):
+                    device_ids: str,
+                    request_rate: float,
+                    burstiness: float):
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
     semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
     benchmark_start_time = time.perf_counter()
 
     tasks = []
-    for prompt, prompt_len in input_requests:
+    async for prompt, mm_content in get_request(input_requests, request_rate, burstiness):
         tasks.append(
             asyncio.create_task(
-                process(semaphore, api_url, model_id, prompt, prompt_len,
+                process(semaphore, api_url, model_id, prompt, mm_content,
                         request_func, req_output_len, top_k, top_p,
-                        repetition_penalty, temperature, best_of,
-                        use_beam_search, pbar)
+                        repetition_penalty, temperature, best_of, pbar)
             )
         )
 
     # start gpu metrics collection
     if get_gpu_metrics:
+        from tools import get_metrics
+
         stop_event = asyncio.Event()
         gpu_metrics_task = asyncio.create_task(
             get_metrics(device_ids, get_gpu_metrics_freq, stop_event))
@@ -327,7 +429,6 @@ async def benchmark(api_url: str,
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
         dur_s=benchmark_duration,
-        tokenizer=tokenizer,
         gpu_metrics=gpu_metrics
     )
 
@@ -356,11 +457,15 @@ async def benchmark(api_url: str,
               "Latency_AVG (ms)": round(metrics.avg_latency),
               "Token Throughput (token/s)": round(metrics.output_throughput, 2),
               "Service Throughput (req/s)": round(metrics.request_throughput, 2),
+              "Decode Token Throughput (token/user/s)": round(
+                  metrics.decode_throughtput_per_user, 2),
               "GPU UTIL": round(metrics.gpu_util, 1),
               "GPU Mem (MB)": round(metrics.gpu_mem, 2),
               "SM Active": round(metrics.sm_active, 2),
               "SM Occupancy": round(metrics.sm_occupancy, 2),
               "DRAM Active": round(metrics.dram_active, 2),
+              "Request Rate": round(request_rate, 2),
+              "Burstiness": round(burstiness, 2),
             }
 
     # display perf data on screen
@@ -373,15 +478,17 @@ async def benchmark(api_url: str,
     if save_result:
         # save performance data to csv file
         csv_file_path = os.path.splitext(log_path)[0] + ".csv"
-        header = "Successful Request, Request_Gen_Token_Len, " \
-                 "Batch Size, Avg_Input_Token_Len, " \
-                 "Avg_Gen_Token_Len, Elapse_Time (s), " \
-                 "Time_to_First_Token_AVG (ms), Time_to_First_Token_P99 (ms), " \
-                 "Time_per_Output_Token_AVG (ms), Time_per_Output_Token_P99 (ms), " \
-                 "Latency_P90 (ms), Latency_P95 (ms), " \
-                 "Latency_P99 (ms), Latency_AVG (ms), " \
-                 "Token Throughput (token/s), Service Throughput (req/s), " \
-                 "GPU UTIL, GPU Mem (MB), SM Active, SM Occupancy, DRAM Active\n"
+        header = "Successful Request,Request_Gen_Token_Len," \
+                 "Batch Size,Avg_Input_Token_Len," \
+                 "Avg_Gen_Token_Len,Elapse_Time (s)," \
+                 "Time_to_First_Token_AVG (ms),Time_to_First_Token_P99 (ms)," \
+                 "Time_per_Output_Token_AVG (ms),Time_per_Output_Token_P99 (ms)," \
+                 "Latency_P90 (ms),Latency_P95 (ms)," \
+                 "Latency_P99 (ms),Latency_AVG (ms)," \
+                 "Token Throughput (token/s),Service Throughput (req/s)," \
+                 "Decode Token Throughput (token/user/s)," \
+                 "GPU UTIL,GPU Mem (MB),SM Active,SM Occupancy,DRAM Active," \
+                 "Request Rate,Burstiness\n"
         del result["Inter_Token_Latency_AVG (ms)"]
         del result["Inter_Token_Latency_P99 (ms)"]
         with open(csv_file_path, 'a') as f:
@@ -394,84 +501,82 @@ async def benchmark(api_url: str,
     # save returned data to jsonl file
     if debug_result and max_concurrency == 1:
         jsonl_file_path = os.path.splitext(log_path)[0] + ".jsonl"
-        save_to_jsonl(jsonl_file_path, outputs, tokenizer)
+        save_to_jsonl(jsonl_file_path, outputs)
 
 
-def main(backend: str = "vllm",
-         host: str = "localhost",
+def main(host: str = "localhost",
          port: int = 8000,
-         endpoint: str = "/v1/completions",
-         dataset_name: str = "sharegpt",
+         model_type: str = "llm",
+         endpoint: str = "/v1/chat/completions",
+         dataset_name: str = 'sharegpt',
          dataset_path: str = None,
+         enable_expand_dataset: bool = False,
          batch_size: int = 1,
-         num_requests: int = 200,
          request_output_len: int = 256,
-         seed: int = 0,
          top_k: int = 3,
          top_p: float = 0.95,
-         temperature: float = 1e-7,
+         temperature: float = 0.01,
          repetition_penalty: float = 1.15,
          best_of: int = 1,
-         use_beam_search: bool = False,
-         tokenizer_name_or_path: str = None,
          trust_remote_code: bool = True,
          disable_tqdm: bool = False,
+         request_rate: float = float('inf'),
+         burstiness : float = 1.0,
          save_result: bool = True,
          debug_result: bool = True,
          log_path: str = 'perf.log',
-         get_gpu_metrics: bool = True,
+         get_gpu_metrics: bool = False,
          get_gpu_metrics_freq: int = 10,
-         device_ids: str = "0,1"):
+         device_ids: str = "0,1,2,3",
+         ):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.FileHandler(log_path), logging.StreamHandler()]
     )
-    random.seed(seed)
-    np.random.seed(seed)
 
     # convert args to bool
     def to_bool(value):
         return str(value).lower() == 'true'
 
-    args = [trust_remote_code, disable_tqdm, save_result,
-            debug_result, get_gpu_metrics]
-    trust_remote_code, disable_tqdm, save_result, debug_result, \
-        get_gpu_metrics = map(to_bool, args)
+    args = [enable_expand_dataset, trust_remote_code, disable_tqdm,
+            save_result, debug_result, get_gpu_metrics]
+    enable_expand_dataset, trust_remote_code, disable_tqdm, save_result, \
+        debug_result, get_gpu_metrics = map(to_bool, args)
 
-    api_url = f"http://{host}:{port}{endpoint}"
-    api_url_available_models = f"http://{host}:{port}/v1/models"
-
-    if backend in ASYNC_REQUEST_FUNCS:
-        request_func = ASYNC_REQUEST_FUNCS.get(backend)
+    if "0.0.0.0" in host:
+        api_url = f"http://{host}:{port}{endpoint}"
+        api_url_available_models = f"http://{host}:{port}/v1/models"
     else:
-        raise ValueError(f"Unknown backend: {backend}")
+        if host.endswith('/'):
+            host = host[:-1]
+        api_url = f"http://{host}{endpoint}"
+        api_url_available_models = f"http://{host}/v1/models"
 
-    if (backend == "vllm") or (backend == "lmdeploy"):
-        response = requests.get(api_url_available_models)
-        if response.status_code == 200:
-            model_id = response.json()['data'][0]['id']
-        else:
-            raise ValueError(f"Error response from: {api_url_available_models}")
+    response = requests.get(api_url_available_models)
+    if response.status_code == 200:
+        model_id = response.json()['data'][0]['id']
     else:
-        assert tokenizer_name_or_path is not None
-        model_id = None
+        raise ValueError(f"Error ({response.reason}) response from {api_url_available_models} "
+                         f"to get model id informations.")
 
-    tokenizer_id = tokenizer_name_or_path if tokenizer_name_or_path is \
-        not None else model_id
-    tokenizer = get_tokenizer(tokenizer_id,
-                              trust_remote_code=trust_remote_code)
-
-
-    # read dataset
-    input_requests = read_dataset(dataset_name, dataset_path, num_requests,
-                                  tokenizer)
-    # for larger batch size, we expand the dataset again
-    if len(input_requests) <= 256:
-        ratio = max(1, int(batch_size / 64))
+    if model_type == "vlm":
+        input_requests = read_vlm_dataset(dataset_name, dataset_path,
+                                          use_base64=True)
+    elif model_type == "llm":
+        input_requests = read_dataset(dataset_name, dataset_path)
     else:
-        ratio = max(1, int(batch_size / 128))
-    input_requests = input_requests * ratio
+        assert model_type in ["vlm", "llm"], f"{model_type} not in [llm, vlm]"
+
+    # Expand the dataset if its num less than 3 times the request batch size
+    expand_input_requests = expand_dataset(
+        input_requests, batch_size, enable_expand_dataset
+    )
+
+    if endpoint.endswith("chat/completions"):
+        request_func = ASYNC_REQUEST_FUNCS.get("openai-chat")
+    else:
+        request_func = ASYNC_REQUEST_FUNCS.get("openai")
 
     # warmup
     _ = asyncio.run(
@@ -483,24 +588,24 @@ def main(backend: str = "vllm",
     asyncio.run(
         benchmark(api_url=api_url,
                   model_id=model_id,
-                  tokenizer=tokenizer,
                   request_func=request_func,
                   max_concurrency=batch_size,
-                  input_requests=input_requests,
+                  input_requests=expand_input_requests,
                   req_output_len=request_output_len,
                   top_k=top_k,
                   top_p=top_p,
                   repetition_penalty=repetition_penalty,
                   temperature=temperature,
                   best_of=best_of,
-                  use_beam_search=use_beam_search,
                   disable_tqdm=disable_tqdm,
                   save_result=save_result,
                   debug_result=debug_result,
                   log_path=log_path,
                   get_gpu_metrics=get_gpu_metrics,
                   get_gpu_metrics_freq=get_gpu_metrics_freq,
-                  device_ids=device_ids)
+                  device_ids=device_ids,
+                  request_rate=request_rate,
+                  burstiness=burstiness)
     )
 
 

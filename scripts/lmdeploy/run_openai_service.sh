@@ -69,7 +69,7 @@ if [ $precision = fp16 ] || [ $precision = w4a16 ] || \
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
     --session-len 16384 \
-    --max-batch-size 256 ${extra_args} --max-log-len 0
+    --max-batch-size 256 ${extra_args} --max-log-len 0 # --chat-template '{"meta_instruction": ""}'
 #    --enable-prefix-caching \
 
 else
