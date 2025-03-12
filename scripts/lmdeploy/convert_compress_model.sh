@@ -2,14 +2,14 @@
 ################################################################################
 # @Author   : wanzhenchn@gmail.com
 # @Date     : 2023-09-25 16:19:07
-# @Details  : Convert hf model to turbomind format or quantize/compress hf models
+# @Details  : compress hf models with awq-w4a16, fp8 quantization
 ################################################################################
 
 set -euxo pipefail
 
 if [ $# != 4 ]; then
-  echo "Usage: $0 model_path deploy_model_format(hf or turbomind, modelopt) precision(fp16, w4a16, w8a8 or fp8) device_id"
-  exit
+  echo "Usage: $0 model_path deploy_model_format(hf or turbomind, modelopt) precision(fp16, awq-w4a16, w8a8 or fp8) device_id"
+  exit 0
 fi
 
 MODEL_PATH="${1}/"
@@ -20,11 +20,7 @@ dev_id=$4
 export CUDA_VISIBLE_DEVICES=${dev_id}
 
 model_name_dir=$(basename ${MODEL_PATH%/})
-
-turbomind_model_path=${model_name_dir}-turbomind
-quant_turbomind_model_path=${model_name_dir}-${precision}-turbomind
-quant_hf_model_path=${model_name_dir}-${precision}-hf
-quant_modelopt_model_path=${model_name_dir}-${precision}-modelopt
+quant_model_path=${model_name_dir}-${precision}-${deploy_model_format}
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
@@ -84,6 +80,7 @@ function quantize_model(){
   local dst_path=$3
 
   architecture=$(awk -F'["]' '/"architectures"/ {getline; print $2}' "${model_path}/config.json")
+  intermediate_size=$(jq '.intermediate_size' "${model_path}/config.json")
 
   local extra_args=""
 
@@ -111,15 +108,25 @@ function quantize_model(){
         fi
        fi
 
-      lmdeploy lite $method \
-        ${model_path} `# The name or path of the model to be loaded.` \
-        --calib-samples 128 \
-        --calib-seqlen 2048 \
-        --work-dir ${dst_path} \
-        ${extra_args}
+      if [ $architecture = Qwen2ForCausalLM ] && [ $intermediate_size = 29568 ]; then
+        # Only for Qwen2.5-72, padding the weights
+        python3 ${SCRIPT_DIR}/padding_qwen2.5-72b.py ${model_path} "${model_path}-padded"
+        # autoawq
+        if [[ ! $(pip list | grep "autoawq") ]]; then
+          python3 -m pip install autoawq
+        fi
+        python3 ${SCRIPT_DIR}/autoawq_quantize.py "${model_path}-padded" ${dst_path}
+      else
+        lmdeploy lite $method \
+          ${model_path} `# The name or path of the model to be loaded.` \
+          --calib-samples 128 \
+          --calib-seqlen 2048 \
+          --work-dir ${dst_path} \
+          ${extra_args}
+      fi
   else
     echo "quantization method only supports calibrate, auto_awq, smooth_quant."
-    exit
+    exit 1
   fi
 }
 
@@ -130,8 +137,8 @@ function modelopt_quantize_model() {
 
   local extra_args=""
 
-  if [ $precision = w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
-    if [ $precision = w4a16 ]; then
+  if [ $precision = awq-w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
+    if [ $precision = awq-w4a16 ]; then
       extra_args+="--qformat int4_awq "
 
     elif [ $precision = w8a8 ]; then
@@ -147,7 +154,7 @@ function modelopt_quantize_model() {
       --dataset ultrachat_2k \
       ${extra_args}
   else
-    echo "Precision only supports w4a16, w8a8 or fp8"
+    echo "Precision only supports awq-w4a16, w8a8 or fp8"
     exit 1
   fi
 }
@@ -155,52 +162,52 @@ function modelopt_quantize_model() {
 
 if [ $deploy_model_format = turbomind ]; then
   if [ $precision = fp16 ]; then
-    convert_turbomind llama hf ${MODEL_PATH} 0 ${turbomind_model_path}
+    convert_turbomind llama hf ${MODEL_PATH} 0 ${quant_model_path}
 
-  elif [ $precision = w4a16 ]; then
+  elif [ $precision = awq-w4a16 ]; then
     # get hf awq model with quantization parameters
-    quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
+    quantize_model auto_awq ${MODEL_PATH} ${quant_model_path}-hf
 
     # convert hf-awq-quant models to turbomind format
-    convert_turbomind llama awq ${quant_hf_model_path} 128 ${quant_turbomind_model_path}
+    convert_turbomind llama awq ${quant_model_path}-hf 128 ${quant_model_path}
 
   elif [ $precision = fp8 ]; then
     # get hf fp8 model with quantization parameters
-    quantize_model auto_fp8 ${MODEL_PATH} ${quant_hf_model_path}
+    quantize_model auto_fp8 ${MODEL_PATH} ${quant_model_path}-hf
 
     # convert hf-fp8-quant models to turbomind format
-    convert_turbomind llama fp8 ${quant_hf_model_path} 0 ${quant_turbomind_model_path}
+    convert_turbomind llama fp8 ${quant_model_path}-hf 0 ${quant_model_path}
   else
-    echo "Precision only supports fp16, w4a16, fp8"
+    echo "Precision only supports fp16, awq-w4a16, fp8"
     exit 1
   fi
 elif [ $deploy_model_format = hf ]; then
   if [ $precision = fp16 ]; then
     echo "LMDeploy supports loading HuggingFace models without model conversion."
-    exit
+    exit 0
 
-  elif [ $precision = w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
+  elif [ $precision = awq-w4a16 ] || [ $precision = w8a8 ] || [ $precision = fp8 ]; then
     check_transformers_version ${MODEL_PATH}
 
-    if [ $precision = w4a16 ]; then
-      quantize_model auto_awq ${MODEL_PATH} ${quant_hf_model_path}
+    if [ $precision = awq-w4a16 ]; then
+      quantize_model auto_awq ${MODEL_PATH} ${quant_model_path}
 
     elif [ $precision = w8a8 ]; then
-      quantize_model smooth_quant ${MODEL_PATH} ${quant_hf_model_path}
+      quantize_model smooth_quant ${MODEL_PATH} ${quant_model_path}
 
     elif [ $precision = fp8 ]; then
-      quantize_model auto_fp8 ${MODEL_PATH} ${quant_hf_model_path}
+      quantize_model auto_fp8 ${MODEL_PATH} ${quant_model_path}
     fi
   else
-    echo "Precision only supports fp16, w4a16 or fp8"
+    echo "Precision only supports fp16, awq-w4a16 or fp8"
     exit 1
   fi
 elif [ $deploy_model_format = modelopt ]; then
   if [[ ! $(pip list | grep "nvidia-modelopt") ]]; then
-    pip install "nvidia-modelopt[all]~=0.19.0" --extra-index-url https://pypi.nvidia.com
+    pip install "nvidia-modelopt[all]~=0.25.0" --extra-index-url https://pypi.nvidia.com
   fi
-  modelopt_quantize_model ${MODEL_PATH} ${quant_modelopt_model_path}
+  modelopt_quantize_model ${MODEL_PATH} ${quant_model_path}
 else
   echo "Deploying model only supports turbomind, hf or modelopt format"
-  exit
+  exit 1
 fi
