@@ -1,7 +1,7 @@
 FROM nvcr.io/nvidia/tritonserver:22.12-py3
 
 RUN rm /etc/apt/sources.list.d/cuda*.list && apt-get update && apt-get install -y --no-install-recommends \
-    rapidjson-dev libgoogle-glog-dev gdb python3.8-venv \
+    rapidjson-dev libgoogle-glog-dev gdb python3.8-venv ninja-build \
     && rm -rf /var/lib/apt/lists/* && cd /opt && python3 -m venv py38
 
 RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools==69.5.1 && \
@@ -10,26 +10,28 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools==69.5.1 && \
 
 ENV NCCL_LAUNCH_MODE=GROUP
 
-WORKDIR /opt/LMDeploy
-ADD . /opt/LMDeploy
+WORKDIR /opt/lmdeploy
+ADD . /opt/lmdeploy
 ARG SM="80"
-RUN python3 -m pip install --no-cache-dir -r requirements.txt && \
+RUN python3 -m pip install -r requirements_cuda.txt && \
     mkdir -p build && cd build && \
-    cmake .. \
+    cmake -G Ninja .. \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
-        -DCMAKE_INSTALL_PREFIX=./install \
+        -DCMAKE_INSTALL_PREFIX=/opt/lmdeploy/install \
         -DBUILD_PY_FFI=ON \
         -DBUILD_MULTI_GPU=ON \
         -DCMAKE_CUDA_FLAGS="-lineinfo" \
         -DUSE_NVTX=ON \
         -DSM=${SM} -DCMAKE_CUDA_ARCHITECTURES=${SM} && \
-    make -j$(nproc) && make install && \
-    cd .. && \
-    python3 -m pip install . && \
-    # rm -rf build
-    ls build
-ENV LD_LIBRARY_PATH=/opt/LMDeploy/build/install/lib:$LD_LIBRARY_PATH
+    ninja -j$(nproc) && ninja install && \
+    cd .. && python3 -m pip install -e . && \
+    rm -rf build
+
+ENV LD_LIBRARY_PATH=/opt/lmdeploy/install/lib:$LD_LIBRARY_PATH
+ENV PATH=/opt/lmdeploy/install/bin:$PATH
+
+ENV TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 
 WORKDIR /workspace
 ENV PROMETHEUS_MULTIPROC_DIR /workspace/metrics
