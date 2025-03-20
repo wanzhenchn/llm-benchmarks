@@ -6,16 +6,17 @@
 ################################################################################
 set -euxo pipefail
 
-if [ $# != 3  ]; then
-  echo "Usage: $0 model_path port gpu_device_id(0,1)"
-  exit
+if [ $# -ne 3 ] && [ $# -ne 4 ]; then
+  echo "Usage: $0 model_path port (extra_args) gpu_device_id(0,1)"
+  exit 1
 fi
 
 # https://github.com/NVIDIA/TensorRT-LLM/blob/main/tensorrt_llm/commands/serve.py
 
 model_path=$1
 port=$2
-device_id=$3
+extra_args=${3-""}
+device_id=${!#}
 
 export CUDA_VISIBLE_DEVICES=${device_id}
 
@@ -25,4 +26,4 @@ trtllm-serve ${model_path} \
   --port ${port} \
   --tp_size ${tp} \
   --kv_cache_free_gpu_memory_fraction 0.9 \
-  --trust_remote_code
+  --trust_remote_code ${extra_args}

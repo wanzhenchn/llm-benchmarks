@@ -17,7 +17,7 @@ fi
 
 VERSION=$(python3 -c "from setuptools_scm import get_version; print(get_version())")
 VERSION=$(echo "$VERSION" | sed 's/\.d[0-9]\{8\}//' | sed 's/+\(g\)\?/-/')
-cuda_arch_list="7.0 8.0 9.0"
+cuda_arch_list="8.0 9.0"
 arch=arch_$(echo $cuda_arch_list | tr -d -c 0-9)
 
 IMAGE_ADDR=registry.cn-beijing.aliyuncs.com/devel-img/vllm
@@ -26,6 +26,7 @@ IMAGE_TAG=${VERSION}-${arch}
 docker build --pull \
   --build-arg torch_cuda_arch_list="$cuda_arch_list" \
   -t ${IMAGE_ADDR}:${IMAGE_TAG} \
-  -f ../docker/Dockerfile.vllm .
+  --target vllm-base -f Dockerfile .
+#  -f ../docker/Dockerfile.vllm .
 
-docker push $IMAGE_TAG
+docker push ${IMAGE_ADDR}:$IMAGE_TAG
