@@ -23,6 +23,7 @@ export CUDA_VISIBLE_DEVICES=${device_id}
 tp=$(echo "$device_id" |grep -o "[0-9]" |grep -c "")
 
 trtllm-serve ${model_path} \
+  --tokenizer ${model_path} \
   --port ${port} \
   --tp_size ${tp} \
   --kv_cache_free_gpu_memory_fraction 0.9 \

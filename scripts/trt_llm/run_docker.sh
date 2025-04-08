@@ -14,13 +14,11 @@ fi
 
 port=$1
 
-# IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:0.17.0.dev2024121700-arch_8090
-IMAGE_TAG=nvcr.io/nvidia/tritonserver:25.01-trtllm-python-py3
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:0.19.0.dev2025040800-arch_8090100
 
 docker run -it --gpus all --privileged \
   --network=host --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
-  -v ${PWD}:/workspace \
+  -v ~/:/root/ \
   -v /:/data \
   -p $port:$port \
-  --rm --name=trt-test-$port \
-  ${IMAGE_TAG} /bin/bash
+  --rm --name=trt-test-$port ${IMAGE_TAG} /bin/bash

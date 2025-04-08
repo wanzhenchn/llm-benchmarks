@@ -270,6 +270,10 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
             actual_output_lens.append(0)
             res_latency.append(0)
 
+    # check completed request
+    assert completed > 0, f"The number of requests that returned successfully " \
+        f"is {completed}. Please check the service logs to further diagnose the issue."
+
     metrics = BenchmarkMetrics(
         completed=completed,
         total_input=total_input,
@@ -499,7 +503,7 @@ async def benchmark(api_url: str,
             logging.info(f'Performance data have been saved in {csv_file_path}')
 
     # save returned data to jsonl file
-    if debug_result and max_concurrency == 1:
+    if debug_result:
         jsonl_file_path = os.path.splitext(log_path)[0] + ".jsonl"
         save_to_jsonl(jsonl_file_path, outputs)
 
