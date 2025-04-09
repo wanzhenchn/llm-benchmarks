@@ -47,10 +47,9 @@ if [ $# = 5 ]; then
   fi
 
   export VLLM_WORKER_MULTIPROC_METHOD="spawn"
-  python3 -m vllm.entrypoints.openai.api_server \
+  vllm serve ${model_path} \
     --host ${host_name} \
     --port $port \
-    --model ${model_path} \
     -tp ${gpu_num} \
     --max-model-len 4096 \
     --max-num-seqs 256 `# How many requests can be batched into a single model run` \

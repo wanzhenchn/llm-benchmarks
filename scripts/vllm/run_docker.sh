@@ -14,11 +14,13 @@ fi
 
 port=$1
 
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.8.0rc2.dev1-b539222d-arch_90
+IMAGE_TAG=vllm/vllm-openai:v0.8.3
+# IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.8.0rc2.dev1-b539222d-arch_90
 
 docker run -it --gpus all --privileged --shm-size=10g \
             --ipc=host --network=host \
             -v ~/:/root/ \
-            -v /data/:/data \
+            -v /:/data \
             -p ${port}:${port} \
-            --rm --name=vllm-test-${port} ${IMAGE_TAG} /bin/bash
+            --entrypoint /bin/bash \
+            --rm --name=vllm-test-${port} ${IMAGE_TAG}
