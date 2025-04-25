@@ -92,7 +92,6 @@ function convert_checkpoint {
         extra_args+="--quant_ckpt_path ${qserve_ckpt_path} "
         extra_args+="--use_qserve "
 #        extra_args+="--per_group " # Add this option if using per-group quantization
-	      export TRTLLM_DISABLE_UNIFIED_CONVERTER=1  # The current checkpoint conversion code requires legacy path
       fi
 
       # https://github.com/NVIDIA/TensorRT-LLM/tree/main/examples/mixtral
@@ -101,6 +100,7 @@ function convert_checkpoint {
 #        extra_args+="--moe_ep_size ${ep_size} "
       fi
 
+      export TRTLLM_DISABLE_UNIFIED_CONVERTER=1  # The current checkpoint conversion code requires legacy path
       python3 ${TRT_LLM_EXAMPLE_PATH}/models/core/${model_type}/convert_checkpoint.py \
         --model_dir ${hf_model_path} \
   	    --tp_size ${tp_size} \

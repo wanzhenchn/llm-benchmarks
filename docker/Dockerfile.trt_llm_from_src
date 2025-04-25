@@ -11,6 +11,9 @@ ENV BASH_ENV=${BASH_ENV:-/etc/bash.bashrc}
 ENV ENV=${ENV:-/etc/shinit_v2}
 SHELL ["/bin/bash", "-c"]
 
+# Clean up the pip constraint file from the base NGC PyTorch image.
+RUN [ -f /etc/pip/constraint.txt  ] && : > /etc/pip/constraint.txt || true
+
 FROM base as devel
 
 ARG PYTHON_VERSION="3.12.3"
@@ -51,6 +54,10 @@ RUN bash ./install_mpi4py.sh && rm install_mpi4py.sh
 ARG TORCH_INSTALL_TYPE="skip"
 COPY docker/common/install_pytorch.sh install_pytorch.sh
 RUN bash ./install_pytorch.sh $TORCH_INSTALL_TYPE && rm install_pytorch.sh
+
+# Install OpenCV with FFMPEG support
+RUN pip3 uninstall -y opencv && rm -rf /usr/local/lib/python3*/dist-packages/cv2/
+RUN pip3 install opencv-python-headless --force-reinstall --no-deps
 
 FROM ${DEVEL_IMAGE} as wheel
 WORKDIR /src/tensorrt_llm
@@ -95,6 +102,7 @@ COPY --from=wheel \
      ${CPP_BUILD_DIR}/benchmarks/bertBenchmark \
      ${CPP_BUILD_DIR}/benchmarks/gptManagerBenchmark \
      ${CPP_BUILD_DIR}/benchmarks/gptSessionBenchmark \
+     ${CPP_BUILD_DIR}/benchmarks/disaggServerBenchmark \
      benchmarks/cpp/
 COPY examples examples
 RUN chmod -R a+w examples && \
@@ -102,10 +110,11 @@ RUN chmod -R a+w examples && \
       benchmarks/cpp/bertBenchmark.cpp \
       benchmarks/cpp/gptManagerBenchmark.cpp \
       benchmarks/cpp/gptSessionBenchmark.cpp \
+      benchmarks/cpp/disaggServerBenchmark.cpp \
       benchmarks/cpp/CMakeLists.txt
 ARG GIT_COMMIT
 ARG TRT_LLM_VER
 ENV TRT_LLM_GIT_COMMIT=${GIT_COMMIT} \
     TRT_LLM_VERSION=${TRT_LLM_VER}
 
-RUN python3 -m pip install sentencepiece~=0.1.99 rouge_score~=0.1.2 datasets==2.14.6 --extra-index-url https://pypi.nvidia.com
+RUN python3 -m pip install evaluate rouge_score sentencepiece>=0.1.99 --extra-index-url https://pypi.nvidia.com

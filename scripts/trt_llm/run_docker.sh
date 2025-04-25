@@ -21,4 +21,4 @@ docker run -it --gpus all --privileged \
   -v ~/:/root/ \
   -v /:/data \
   -p $port:$port \
-  --rm --name=trt-test-$port ${IMAGE_TAG} /bin/bash
+  --entrypoint /bin/bash --rm --name=trt-test-$port ${IMAGE_TAG}
