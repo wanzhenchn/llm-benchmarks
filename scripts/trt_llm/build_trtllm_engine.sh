@@ -101,7 +101,7 @@ function convert_checkpoint {
 #        extra_args+="--moe_ep_size ${ep_size} "
       fi
 
-      python3 ${TRT_LLM_EXAMPLE_PATH}/${model_type}/convert_checkpoint.py \
+      python3 ${TRT_LLM_EXAMPLE_PATH}/models/core/${model_type}/convert_checkpoint.py \
         --model_dir ${hf_model_path} \
   	    --tp_size ${tp_size} \
   	    --dtype float16 \
@@ -124,7 +124,7 @@ function convert_checkpoint {
 
         if [[ ! $(pip list | grep "nvidia-modelopt") ]]; then
           # NVIDIA Modelopt (AlgorithMic Model Optimization) toolkit for the model quantization process.
-          pip install "nvidia-modelopt[all]~=0.25.0" --extra-index-url https://pypi.nvidia.com
+          pip install "nvidia-modelopt[all]~=0.27.1" --extra-index-url https://pypi.nvidia.com
         fi
       fi
 
@@ -226,7 +226,7 @@ function run_engine {
 
 
 max_batch_size=256
-max_input_len=2048
+max_input_len=4096
 max_output_len=1024
 max_seq_len=$(echo "${max_input_len} ${max_output_len}" | awk '{print int($1+$2)}')
 max_num_tokens=8192
