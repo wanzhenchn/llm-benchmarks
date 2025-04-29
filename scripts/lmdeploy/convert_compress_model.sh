@@ -102,14 +102,19 @@ function quantize_model(){
         # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/auto_fp8.py
         extra_args+="--calib-dataset ultrachat_2k "
         extra_args+="--act-scheme static " # static or dynamic
+        extra_args+="--ignored-layer-list lm_head "
         if [ $architecture = MixtralForCausalLM ]; then
           # for MoE models, skip quantization for *block_sparse_moe.gate layers
-          extra_args+="--ignored-layer-list lm_head re:.*block_sparse_moe.gate "
+          extra_args+="re:.*block_sparse_moe.gate "
+        elif [ $architecture = CompassMoeForCausalLM ]; then
+          extra_args+="re:.*mlp.gate re:.*block_sparse_moe.gate "
+        elif [ $architecture = Qwen2_5_VLForConditionalGeneration ]; then
+          extra_args+="re:.*visual "
         fi
-       fi
+      fi
 
-      if [ $architecture = Qwen2ForCausalLM ] && [ $intermediate_size = 29568 ]; then
-        # Only for Qwen2.5-72, padding the weights
+      if [ $method = auto_awq ] && [ $architecture = Qwen2ForCausalLM ] && [ $intermediate_size = 29568 ]; then
+        # Only for Qwen2.5-72 awq, padding the weights
         python3 ${SCRIPT_DIR}/padding_qwen2.5-72b.py ${model_path} "${model_path}-padded"
         # autoawq
         if [[ ! $(pip list | grep "autoawq") ]]; then
