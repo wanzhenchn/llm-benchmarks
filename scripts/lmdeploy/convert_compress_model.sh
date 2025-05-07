@@ -79,8 +79,12 @@ function quantize_model(){
   local model_path=$2
   local dst_path=$3
 
-  architecture=$(awk -F'["]' '/"architectures"/ {getline; print $2}' "${model_path}/config.json")
-  intermediate_size=$(jq '.intermediate_size' "${model_path}/config.json")
+  config_file="${model_path}/config.json"
+  dst_config_file="${dst_path}/config.json"
+  architecture=$(awk -F'["]' '/"architectures"/ {getline; print $2}' "$config_file")
+  intermediate_size=$(jq '.intermediate_size' "$config_file")
+  num_experts=$(jq -r '.num_experts' "$config_file")
+  num_experts_per_tok=$(jq -r '.num_experts_per_tok' "$config_file")
 
   local extra_args=""
 
@@ -98,6 +102,12 @@ function quantize_model(){
         extra_args+="--w-bits 4 "
         extra_args+="--w-group-size 128 "
 
+        # for Qwen3MoE models, we modify the num_experts_per_tok to num_experts to avoid unactivated experts before quantizing
+        if [ $architecture = Qwen3MoeForCausalLM ]; then
+          jq --arg new_val "$num_experts" '.num_experts_per_tok = ($new_val | tonumber)' \
+            "$config_file" > tmp.json && mv tmp.json "$config_file"
+        fi
+
       elif [ $method = auto_fp8 ]; then
         # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/lite/apis/auto_fp8.py
         extra_args+="--calib-dataset ultrachat_2k "
@@ -108,6 +118,8 @@ function quantize_model(){
           extra_args+="re:.*block_sparse_moe.gate "
         elif [ $architecture = CompassMoeForCausalLM ]; then
           extra_args+="re:.*mlp.gate re:.*block_sparse_moe.gate "
+        elif [ $architecture = Qwen3MoeForCausalLM ]; then
+          extra_args+="re:.*mlp.gate "
         elif [ $architecture = Qwen2_5_VLForConditionalGeneration ]; then
           extra_args+="re:.*visual "
         fi
@@ -129,8 +141,16 @@ function quantize_model(){
           --work-dir ${dst_path} \
           ${extra_args}
       fi
+
+      # for Qwen3MoE models, restore the original value of num_experts_per_tok after quantizing
+      if [ $method = auto_awq ] && [ $architecture = Qwen3MoeForCausalLM ]; then
+        for file in $config_file $dst_config_file; do
+          jq --argjson orig_val "$num_experts_per_tok" '.num_experts_per_tok = $orig_val' \
+            "$file" > tmp.json && mv tmp.json "$file"
+        done
+      fi
   else
-    echo "quantization method only supports calibrate, auto_awq, smooth_quant."
+    echo "quantization method only supports calibrate, auto_awq, auto_fp8, smooth_quant."
     exit 1
   fi
 }
