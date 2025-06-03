@@ -232,7 +232,7 @@ def quantize_model(args, model, quant_cfg, calib_dataloader=None):
 
     print("Starting quantization...")
     start_time = time.time()
-    mtq.quantize(model, quant_cfg, forward_loop=calibrate_loop)
+    model = mtq.quantize(model, quant_cfg, forward_loop=calibrate_loop)
     end_time = time.time()
     print(f"Quantization done. time used: {end_time - start_time}s")
     return model
@@ -444,6 +444,7 @@ def main(args):
             export_helper = Export2Onellm(args, model, tokenizer)
             export_helper.export()
         elif args.export_fmt == "hf":
+            model.save_pretrained(f'{args.output_dir}-hf')
             export_hf_checkpoint(model, export_dir=args.output_dir)
         elif args.export_fmt == "trtllm":
             # Move meta tensor back to device before exporting.
@@ -528,4 +529,4 @@ if __name__ == "__main__":
 
     main(args)
 
-# Usage: python3 modelopt_quantize.py --model_dir <HF model> --calib_size 512 --qformat w4a8_awq --kv_cache_qformat fp8 --export_fmt hf
+# Usage: python3 modelopt_quantize.py --model_dir <HF model> --calib_size 512 --batch_size 16 --qformat w4a8_awq --kv_cache_qformat fp8 --export_fmt hf --output_dir <output_path>

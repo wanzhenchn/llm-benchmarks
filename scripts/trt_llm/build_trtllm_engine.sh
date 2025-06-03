@@ -116,6 +116,7 @@ function convert_checkpoint {
           extra_args+="--awq_block_size 128 "
         fi
         extra_args+="--calib_size 512 "
+        extra_args+="--batch_size 16 "
         extra_args+="--kv_cache_dtype fp8"
       elif [ $precision = fp8 ]; then
         extra_args+="--qformat fp8 "
@@ -124,7 +125,7 @@ function convert_checkpoint {
 
         if [[ ! $(pip list | grep "nvidia-modelopt") ]]; then
           # NVIDIA Modelopt (AlgorithMic Model Optimization) toolkit for the model quantization process.
-          pip install "nvidia-modelopt[all]~=0.27.1" --extra-index-url https://pypi.nvidia.com
+          pip install "nvidia-modelopt[all]~=0.29.0" --extra-index-url https://pypi.nvidia.com
         fi
       fi
 

@@ -12,7 +12,10 @@ from lm_eval.utils import simple_parse_args_string
 from lm_eval.__main__ import cli_evaluate, parse_eval_args, setup_parser
 from lm_eval.api.model import T
 from lm_eval.models.huggingface import HFLM
+
+import modelopt.torch.opt as mto
 import modelopt.torch.quantization as mtq
+from modelopt.torch.quantization.utils import is_quantized
 from modelopt.torch.quantization.plugins import register_hf_attentions_on_the_fly
 from modelopt.torch.utils.dataset_utils import (
     create_forward_loop,
@@ -40,8 +43,16 @@ def create_from_arg_obj(
     additional_config = {} if additional_config is None else additional_config
     additional_config = {k: v for k, v in additional_config.items() if v is not None}
 
+    # Enable automatic save/load of modelopt state huggingface checkpointing
+    mto.enable_huggingface_checkpointing()
+
     model_obj = cls(**arg_dict, **additional_config)
     model_obj.tokenizer.padding_side = "left"
+
+    if is_quantized(model_obj.model):
+        # return if model is already quantized
+        print("Skipping quantization: model is already quantized.")
+        return model_obj
 
     if qformat:
         if not calib_batch_size:
