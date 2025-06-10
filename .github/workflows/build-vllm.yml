@@ -30,7 +30,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     #    runs-on: self-hosted
 
     steps:
@@ -68,4 +68,4 @@ jobs:
         docker version
         docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
 
-        bash scripts/vllm/build_docker.sh
+        bash scripts/vllm/build_docker.sh 1

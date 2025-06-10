@@ -14,8 +14,8 @@ fi
 
 port=$1
 
-IMAGE_TAG=vllm/vllm-openai:v0.8.3
-# IMAGE_TAG=registry.cn-beijing.aliyuncs.com/wanzhen/vllm:0.8.0rc2.dev1-b539222d-arch_90
+# IMAGE_TAG=vllm/vllm-openai:v0.8.3
+IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/vllm:0.9.1rc2.dev12-9368cc90b-arch_8090100
 
 docker run -it --gpus all --privileged --shm-size=10g \
             --ipc=host --network=host \

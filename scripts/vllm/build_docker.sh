@@ -6,6 +6,14 @@
 ################################################################################
 set -euxo pipefail
 
+
+if [ $# = 1 ]; then
+  # # Limit the number of parallel jobs to avoid OOM in ci
+  max_jobs=$1
+else
+  max_jobs=$(nproc)
+fi
+
 if [ ! -d vllm ]; then
   git clone https://github.com/vllm-project/vllm
 fi
@@ -24,9 +32,11 @@ IMAGE_ADDR=registry.cn-beijing.aliyuncs.com/devel-img/vllm
 IMAGE_TAG=${VERSION}-${arch}
 
 docker build --pull \
-  --build-arg torch_cuda_arch_list="$cuda_arch_list" \
+  --build-arg CUDA_VERSION=12.5.1 --build-arg torch_cuda_arch_list="$cuda_arch_list" \
+  --build-arg max_jobs=$max_jobs --build-arg nvcc_threads=2 \
+  --build-arg RUN_WHEEL_CHECK=false \
   -t ${IMAGE_ADDR}:${IMAGE_TAG} \
-  --target vllm-base -f Dockerfile .
+  --target vllm-base -f docker/Dockerfile .
 #  -f ../docker/Dockerfile.vllm .
 
 docker push ${IMAGE_ADDR}:$IMAGE_TAG
