@@ -485,12 +485,12 @@ if __name__ == "__main__":
         "--qformat",
         help="Quantization format.",
         default="fp8",
-        choices=["fp8", "int8", "int8_sq", "int4_awq", "w4a8_awq"]
+        choices=["fp8", "int8", "int8_sq", "int4_awq", "w4a8_awq", "nvfp4"]
     )
     parser.add_argument(
         "--kv_cache_qformat",
         required=False,
-        default="fp8",
+        default="none",
         choices=["fp8", "nvfp4", "none"],
         help="Specify KV cache quantization format, default to fp8 if not provided",
     )

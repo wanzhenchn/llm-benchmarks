@@ -109,7 +109,7 @@ def setup_parser_with_modelopt_args():
         "--kv_cache_qformat",
         type=str,
         required=False,
-        default="fp8",
+        default="none",
         choices=["fp8", "nvfp4", "none"],
         help="Specify KV cache quantization format, default to fp8 if not provided",
     )
@@ -151,3 +151,4 @@ if __name__ == "__main__":
 # Usage:
 # Baseline: CUDA_VISIBLE_DEVICES=2,3 python3 lm_eval_hf.py --model hf --model_args pretrained=<HF model>,trust_remote_code=True,parallelize=True --tasks mmlu --batch_size 8
 # Quantized: CUDA_VISIBLE_DEVICES=2,3 python3 lm_eval_hf.py --model hf --model_args pretrained=<HF model>,trust_remote_code=True,parallelize=True --qformat w4a8_awq --tasks mmlu --calib_size 512 --batch_size 8
+# --tasks "commonsense_qa,hellaswag,openbookqa<Plug>PeepOpeniqa,social_iqa,gsm8k,mmlu,boolq,ceval-valid,scrolls_quality"

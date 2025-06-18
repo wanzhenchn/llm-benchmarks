@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 if [ $# != 6  ]; then
-  echo "Usage: $0 hf_model_path model_type(llama/qwen/moe) precision(fp16, kv-int8, awq-w4a16, awq-w4a8, sq-w8a8, fp8, w4aINT8) engine_path tp_size device_id(0,1)"
+  echo "Usage: $0 hf_model_path model_type(llama/qwen/moe) precision(fp16, kv-int8, awq-w4a16, awq-w4a8, sq-w8a8, fp8, nvfp4, w4aINT8) engine_path tp_size device_id(0,1)"
   exit
 fi
 
@@ -107,7 +107,8 @@ function convert_checkpoint {
   	    --dtype float16 \
   	    --output_dir ${output_path} ${extra_args}
 
-    elif [ $precision = awq-w4a16 ] || [ $precision = awq-w4a8 ] || [ $precision = fp8 ]; then
+    elif [ $precision = awq-w4a16 ] || [ $precision = awq-w4a8 ] || \
+         [ $precision = fp8 ] || [ $precision = nvfp4 ]; then
       if [ $precision = awq-w4a16 ] || [ $precision = awq-w4a8 ]; then
         if [ $precision = awq-w4a8 ]; then
           extra_args+="--qformat w4a8_awq "
@@ -118,14 +119,14 @@ function convert_checkpoint {
         extra_args+="--calib_size 512 "
         extra_args+="--batch_size 16 "
         extra_args+="--kv_cache_dtype fp8"
-      elif [ $precision = fp8 ]; then
-        extra_args+="--qformat fp8 "
+      elif [ $precision = fp8 ] || [ $precision = nvfp4 ]; then
+        extra_args+="--qformat $precision "
         extra_args+="--kv_cache_dtype fp8 "
         extra_args+="--calib_size 512"
 
         if [[ ! $(pip list | grep "nvidia-modelopt") ]]; then
           # NVIDIA Modelopt (AlgorithMic Model Optimization) toolkit for the model quantization process.
-          pip install "nvidia-modelopt[all]~=0.29.0" --extra-index-url https://pypi.nvidia.com
+          pip install -U "nvidia-modelopt[all]" --extra-index-url https://pypi.nvidia.com
         fi
       fi
 
@@ -226,7 +227,7 @@ function run_engine {
 }
 
 
-max_batch_size=256
+max_batch_size=512
 max_input_len=4096
 max_output_len=1024
 max_seq_len=$(echo "${max_input_len} ${max_output_len}" | awk '{print int($1+$2)}')
