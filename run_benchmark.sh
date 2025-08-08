@@ -123,11 +123,17 @@ function profile()
   local monitor_device_ids=${13}
   local get_gpu_metrics=${14}
 
+  ## extra_body: pass other key:value pairs to the request body.
+  # - for reasoning model, pass '{"reasoning_effort": "low", "include_reasoning": False}' to contral output token length.
+  # - for generating the request token length, pass '{"ignore_eos": True}'
+
+  ## dataset_name: if using custom dataset, please set None, default sharegpt
+
   python3  ${SCRIPT_DIR}/benchmarks/benchmark_serving.py \
       --model_type ${model_type} \
       --host ${host} \
       --port ${port} \
-      --dataset_name ${dataset_name} `# if using custom dataset, please set None, default sharegpt` \
+      --dataset_name ${dataset_name} \
       --dataset_path ${dataset_path} \
       --request_output_len ${req_token_len} \
       --batch_size ${bs} \
@@ -135,6 +141,7 @@ function profile()
       --top_p ${top_p} \
       --temperature ${temperature} \
       --repetition_penalty ${repetition_penalty} \
+      --extra_body None \
       --log_path ${log_path} \
       --enable_expand_dataset true \
       --get_gpu_metrics ${get_gpu_metrics} \
@@ -182,7 +189,7 @@ fi
 
 tp_size="1"
 gen_len="256 512"
-batch_size="1 2"
+batch_size="16 32 "
 
 for tp in ${tp_size}; do
   LOG_PATH=${BACKEND}-perf-${log_name}-tp${gpu_num}.log
@@ -191,7 +198,7 @@ for tp in ${tp_size}; do
     # For local test, start dcgm to capture the GPU metrics, otherwise COMMENT
     # start_dcgm and set get_gpu_metrics=false
     start_dcgm
-    get_gpu_metrics=true
+    get_gpu_metrics=false
 
     # if you want to make benchmark tests after launching server in container,
     # please COMMENT the start_service and stop_service, then modify the
