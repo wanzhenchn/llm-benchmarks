@@ -1,3 +1,4 @@
+tqdm
 requests
 fire
 tabulate
@@ -5,3 +6,4 @@ pandas
 prometheus-client
 openpyxl
 aiohttp
+pillow

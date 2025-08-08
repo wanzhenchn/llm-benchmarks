@@ -27,6 +27,6 @@ trtllm-serve ${model_path} \
   --port ${port} \
   --tp_size ${tp} \
   --kv_cache_free_gpu_memory_fraction 0.9 \
-  --trust_remote_code true \
-  --extra_llm_api_options extra-llm-api-config.yml \
-  --backend pytorch ${extra_args}
+  --trust_remote_code \
+  --backend pytorch ${extra_args} \
+  --extra_llm_api_options extra-llm-api-config.yml

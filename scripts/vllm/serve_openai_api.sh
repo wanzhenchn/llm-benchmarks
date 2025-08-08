@@ -25,7 +25,8 @@ if [ $# = 5 ]; then
 
   extra_args=""
 
-  if [ $mode = fp16 ] || [ $mode = w4a16 ] || [ $mode = kv-fp8 ] || [ $mode = fp8-kv-fp16 ] || [ $mode = fp8-kv-fp8 ]; then
+  if [ $mode = fp16 ] || [ $mode = w4a16 ] || [ $mode = kv-fp8 ] || \
+    [ $mode = fp8-kv-fp16 ] || [ $mode = fp8-kv-fp8 ] || [ $mode = fp4 ]; then
     if [ $mode = w4a16 ]; then
       extra_args+="--dtype half "
     fi
@@ -34,8 +35,12 @@ if [ $# = 5 ]; then
       extra_args+="--kv-cache-dtype fp8 "
     fi
 
+    if [ $mode = fp4 ]; then
+      export VLLM_USE_FLASHINFER_MOE_MXFP4_BF16=1
+    fi
+
   else
-    echo "mode only support fp16, w4a16, kv-fp8, fp8-kv-fp16 and fp8-kv-fp8"
+    echo "mode only support fp16, w4a16, kv-fp8, fp8-kv-fp16, fp8-kv-fp8 and fp4"
     exit
   fi
 
@@ -58,10 +63,11 @@ if [ $# = 5 ]; then
     --trust-remote-code \
     --disable-log-stats \
     --disable-log-requests \
+    --async-scheduling \
     --no-enable-prefix-caching \
     ${extra_args}
 #    --enforce-eager `# By default it's not eager mode, If it's not set, it uses cuda_graph`
 else
-  echo "Usage1: $0 model_path mode(fp16, w4a16 or fp8-kv-fp8, fp8-kv-fp16) port device_id(0 or 0,1) engine_type(0 or 1)"
+  echo "Usage1: $0 model_path mode(fp16, w4a16 or fp8-kv-fp8, fp8-kv-fp16, fp4) port device_id(0 or 0,1) engine_type(0 or 1)"
   exit
 fi

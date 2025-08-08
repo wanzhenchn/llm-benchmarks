@@ -425,9 +425,6 @@ def main(args):
         generated_ids_before_ptq = model.generate(input_ids, max_new_tokens=100)
 
         model = quantize_model(args, model, quant_cfg, calib_dataloader)
-        # Lets print the quantization summary
-        if args.verbose:
-            mtq.print_quant_summary(model)
 
         # Run some samples
         generated_ids_after_ptq = model.generate(input_ids, max_new_tokens=100)
@@ -444,7 +441,6 @@ def main(args):
             export_helper = Export2Onellm(args, model, tokenizer)
             export_helper.export()
         elif args.export_fmt == "hf":
-            model.save_pretrained(f'{args.output_dir}-hf')
             export_hf_checkpoint(model, export_dir=args.output_dir)
         elif args.export_fmt == "trtllm":
             # Move meta tensor back to device before exporting.

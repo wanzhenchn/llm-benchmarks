@@ -35,7 +35,7 @@ if [ $1 = all ] || [ $1 = trtllm_src ]; then
 
   CUDA_ARCHS="80-real;90-real"
   GIT_COMMIT=$(git rev-parse HEAD)
-  BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --python_bindings --benchmarks --cuda_architectures ${CUDA_ARCHS}"
+  BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --benchmarks --cuda_architectures ${CUDA_ARCHS}"
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:${TRT_LLM_VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
 else
   TRT_LLM_VERSION=25.01-trtllm-python-py3
@@ -53,7 +53,7 @@ if [ $1 = ngc ]; then
 elif [ $1 = all ]; then
   DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/tritonserver \
-           --build-arg BASE_TAG=25.04-py3 \
+           --build-arg BASE_TAG=25.06-py3 \
            --build-arg BUILD_WHEEL_ARGS="${BUILD_WHEEL_ARGS}" \
            --build-arg TORCH_INSTALL_TYPE="pypi" \
            --build-arg TRT_LLM_VER="${TRT_LLM_VERSION}" \
@@ -64,7 +64,7 @@ elif [ $1 = all ]; then
 elif [ $1 = trtllm_src ]; then
   DOCKER_BUILDKIT=1 docker build \
            --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch \
-           --build-arg BASE_TAG=25.04-py3 \
+           --build-arg BASE_TAG=25.06-py3 \
            --build-arg PYTHON_VERSION="3.12.3" \
            --build-arg BUILD_WHEEL_ARGS="${BUILD_WHEEL_ARGS}" \
            --build-arg TORCH_INSTALL_TYPE="skip" \

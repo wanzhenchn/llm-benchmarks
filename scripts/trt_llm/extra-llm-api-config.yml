@@ -12,5 +12,5 @@ cuda_graph_batch_sizes:
 - 256
 - 512
 print_iter_log: false
-enable_overlap_scheduler: true
+  # enable_overlap_scheduler: true
 enable_attention_dp: true

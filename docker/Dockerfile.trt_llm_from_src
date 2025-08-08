@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile
 ARG BASE_IMAGE=nvcr.io/nvidia/pytorch
-ARG BASE_TAG=25.01-py3
+ARG BASE_TAG=25.06-py3
 ARG DEVEL_IMAGE=devel
 
 FROM ${BASE_IMAGE}:${BASE_TAG} as base
@@ -57,7 +57,7 @@ RUN bash ./install_pytorch.sh $TORCH_INSTALL_TYPE && rm install_pytorch.sh
 
 # Install OpenCV with FFMPEG support
 RUN pip3 uninstall -y opencv && rm -rf /usr/local/lib/python3*/dist-packages/cv2/
-RUN pip3 install opencv-python-headless --force-reinstall --no-deps
+RUN pip3 install opencv-python-headless --force-reinstall --no-deps --no-cache-dir
 
 FROM ${DEVEL_IMAGE} as wheel
 WORKDIR /src/tensorrt_llm
@@ -73,7 +73,7 @@ COPY .gitmodules setup.py requirements.txt requirements-dev.txt constraints.txt 
 RUN mkdir -p /root/.cache/pip /root/.cache/ccache
 ENV CCACHE_DIR=/root/.cache/ccache
 # Build the TRT-LLM wheel
-ARG BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --python_bindings --benchmarks"
+ARG BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --benchmarks"
 RUN --mount=type=cache,target=/root/.cache/pip --mount=type=cache,target=/root/.cache/ccache \
     python3 scripts/build_wheel.py ${BUILD_WHEEL_ARGS}
 

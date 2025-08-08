@@ -214,7 +214,8 @@ function run_engine {
   local hf_model_path=$1
   local trt_engine_path=$2
 
-  python3 ${TRT_LLM_EXAMPLE_PATH}/run.py \
+  mpirun -n $tp --allow-run-as-root \
+    python3 ${TRT_LLM_EXAMPLE_PATH}/run.py \
     --engine_dir=${trt_engine_path} \
     --tokenizer_dir ${hf_model_path} \
     --input_text "What is machine learning?" \

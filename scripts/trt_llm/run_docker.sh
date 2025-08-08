@@ -14,7 +14,8 @@ fi
 
 port=$1
 
-IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:0.19.0.dev2025040800-arch_8090100
+IMAGE_TAG=nvcr.io/nvidia/tensorrt-llm/release:1.0.0rc0
+# IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:1.0.0rc5-arch_8090
 
 docker run -it --gpus all --privileged \
   --network=host --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
