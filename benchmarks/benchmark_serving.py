@@ -321,7 +321,7 @@ async def process(sem: asyncio.Semaphore,
                   top_p: float,
                   repetition_penalty: float,
                   temperature: float,
-                  best_of: int,
+                  extra_body: Optional[dict] = None,
                   pbar: Optional[tqdm] = None,
                   ):
     async with sem:  # Ensure only max_concurrency tasks run in parallel
@@ -335,7 +335,7 @@ async def process(sem: asyncio.Semaphore,
             top_k=top_k,
             repetition_penalty=repetition_penalty,
             temperature=temperature,
-            best_of=best_of,
+            extra_body=extra_body,
             )
         # Call the request function directly here and return its result
         return await request_func(
@@ -353,6 +353,7 @@ async def warmup(model_id: str,
                  top_p: float = 0.95,
                  temperature: float = 0.01,
                  repetition_penalty: float = 1.15,
+                 extra_body: Optional[dict] = None,
                  warmup_duration_s: int = 60):
     logging.info('start to warmup ...')
 
@@ -366,7 +367,7 @@ async def warmup(model_id: str,
                 asyncio.create_task(
                     process(semaphore, api_url, model_id, prompt, mm_content,
                             request_func, req_output_len, top_k, top_p,
-                            repetition_penalty, temperature, 1, None)
+                            repetition_penalty, temperature, extra_body, None)
                 )
             )
         outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
@@ -385,7 +386,7 @@ async def benchmark(api_url: str,
                     top_p: float,
                     repetition_penalty: float,
                     temperature: float,
-                    best_of: int,
+                    extra_body: Optional[dict],
                     disable_tqdm: bool,
                     save_result: bool,
                     debug_result: bool,
@@ -406,7 +407,7 @@ async def benchmark(api_url: str,
             asyncio.create_task(
                 process(semaphore, api_url, model_id, prompt, mm_content,
                         request_func, req_output_len, top_k, top_p,
-                        repetition_penalty, temperature, best_of, pbar)
+                        repetition_penalty, temperature, extra_body, pbar)
             )
         )
 
@@ -521,7 +522,7 @@ def main(host: str = "localhost",
          top_p: float = 0.95,
          temperature: float = 0.01,
          repetition_penalty: float = 1.15,
-         best_of: int = 1,
+         extra_body: Optional[dict] = None,
          trust_remote_code: bool = True,
          disable_tqdm: bool = False,
          request_rate: float = float('inf'),
@@ -600,7 +601,7 @@ def main(host: str = "localhost",
                   top_p=top_p,
                   repetition_penalty=repetition_penalty,
                   temperature=temperature,
-                  best_of=best_of,
+                  extra_body=extra_body,
                   disable_tqdm=disable_tqdm,
                   save_result=save_result,
                   debug_result=debug_result,

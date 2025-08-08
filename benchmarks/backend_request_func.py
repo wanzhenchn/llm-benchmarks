@@ -24,7 +24,7 @@ class RequestFuncInput:
     top_k: int
     repetition_penalty: float
     temperature: float
-    best_of: int = 1
+    extra_body: Optional[dict] = None
     multi_modal_content: Optional[List[dict]] = None
 
 
@@ -49,7 +49,6 @@ async def async_request_trt_llm(
     assert api_url.endswith("generate_stream")
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        assert request_func_input.best_of == 1
         payload = {
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
@@ -60,6 +59,12 @@ async def async_request_trt_llm(
             "top_k": request_func_input.top_k,
             "repetition_penalty": request_func_input.repetition_penalty,
         }
+        extra_body = request_func_input.extra_body
+        if extra_body:
+            if extra_body.get("ignore_eos", False):
+                payload["min_length"] = request_func_input.request_output_len
+                extra_body.pop("ignore_eos")
+            payload.update(extra_body)
         output = RequestFuncOutput()
         output.prompt = request_func_input.prompt
         output.prompt_len = request_func_input.prompt_len
@@ -130,8 +135,9 @@ async def async_request_openai_completions(
             "top_p": request_func_input.top_p,
             "top_k": request_func_input.top_k,
             "repetition_penalty": request_func_input.repetition_penalty,
-            "best_of": request_func_input.best_of,
         }
+        if request_func_input.extra_body:
+            payload.update(request_func_input.extra_body)
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
         }
@@ -220,10 +226,7 @@ async def async_request_openai_chat_completions(
         payload = {
             "model": request_func_input.model,
             "messages": [
-                {
-                    "role": "user",
-                    "content": content,
-                },
+                {"role": "user", "content": content},
             ],
             "max_tokens": request_func_input.request_output_len,
             "stream": True,
@@ -235,6 +238,8 @@ async def async_request_openai_chat_completions(
             "top_k": request_func_input.top_k,
             "repetition_penalty": request_func_input.repetition_penalty,
         }
+        if request_func_input.extra_body:
+            payload.update(request_func_input.extra_body)
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
