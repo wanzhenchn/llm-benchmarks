@@ -14,6 +14,7 @@ desired_metrics = {
     'DCGM_FI_DEV_GPU_UTIL': 'gpu_util',
     'DCGM_FI_PROF_SM_ACTIVE': 'sm_active',
     'DCGM_FI_PROF_SM_OCCUPANCY': 'sm_occupancy',
+    'DCGM_FI_PROF_PIPE_TENSOR_ACTIVE': 'tensor_active',
     'DCGM_FI_DEV_FB_USED': 'gpu_mem',
     'DCGM_FI_PROF_DRAM_ACTIVE': 'dram_active'
 }

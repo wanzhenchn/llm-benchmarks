@@ -2,6 +2,7 @@ tqdm
 requests
 fire
 tabulate
+rich
 pandas
 prometheus-client
 openpyxl

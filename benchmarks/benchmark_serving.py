@@ -52,6 +52,7 @@ class BenchmarkMetrics:
     avg_latency: float
     gpu_util: float
     gpu_mem: float
+    tensor_active: float
     sm_active: float
     sm_occupancy: float
     dram_active: float
@@ -302,6 +303,7 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
         avg_latency=np.mean(res_latency) * 1000,
         gpu_util=np.mean(gpu_metrics['gpu_util'][3:-2] if gpu_metrics else 0),
         gpu_mem=np.mean(gpu_metrics['gpu_mem'][3:-2] if gpu_metrics else 0),
+        tensor_active=np.mean(gpu_metrics['tensor_active'][3:-2] if gpu_metrics else 0),
         sm_active=np.mean(gpu_metrics['sm_active'][3:-2] if gpu_metrics else 0),
         sm_occupancy=np.mean(gpu_metrics['sm_occupancy'][3:-2] if gpu_metrics else 0),
         dram_active=np.mean(gpu_metrics['dram_active'][3:-2] if gpu_metrics else 0),
@@ -466,6 +468,7 @@ async def benchmark(api_url: str,
                   metrics.decode_throughtput_per_user, 2),
               "GPU UTIL": round(metrics.gpu_util, 1),
               "GPU Mem (MB)": round(metrics.gpu_mem, 2),
+              "Tensor Active": round(metrics.tensor_active, 2),
               "SM Active": round(metrics.sm_active, 2),
               "SM Occupancy": round(metrics.sm_occupancy, 2),
               "DRAM Active": round(metrics.dram_active, 2),
@@ -481,6 +484,8 @@ async def benchmark(api_url: str,
                  f'{df.to_markdown(tablefmt="simple", numalign="left", stralign="left")}\n')
 
     if save_result:
+        from tools import display_performance_table
+
         # save performance data to csv file
         csv_file_path = os.path.splitext(log_path)[0] + ".csv"
         header = "Successful Request,Request_Gen_Token_Len," \
@@ -492,7 +497,7 @@ async def benchmark(api_url: str,
                  "Latency_P99 (ms),Latency_AVG (ms)," \
                  "Token Throughput (token/s),Service Throughput (req/s)," \
                  "Decode Token Throughput (token/user/s)," \
-                 "GPU UTIL,GPU Mem (MB),SM Active,SM Occupancy,DRAM Active," \
+                 "GPU UTIL,GPU Mem (MB),Tensor Active,SM Active,SM Occupancy,DRAM Active," \
                  "Request Rate,Burstiness\n"
         del result["Inter_Token_Latency_AVG (ms)"]
         del result["Inter_Token_Latency_P99 (ms)"]
@@ -501,7 +506,10 @@ async def benchmark(api_url: str,
                 f.write(header)
             line = ''.join(str(v)+',' for v in result.values()) + '\n'
             f.write(line)
-            logging.info(f'Performance data have been saved in {csv_file_path}')
+
+        # print summary from csv file
+        display_performance_table(csv_file_path)
+        logging.info(f'Performance data have been saved in {csv_file_path}')
 
     # save returned data to jsonl file
     if debug_result:
