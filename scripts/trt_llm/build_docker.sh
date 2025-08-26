@@ -33,10 +33,11 @@ if [ $1 = all ] || [ $1 = trtllm_src ]; then
     TRT_LLM_VERSION=$(grep '^__version__' tensorrt_llm/version.py | grep -o '=.*' | tr -d '= "')
   fi
 
-  CUDA_ARCHS="80-real;90-real"
+  CUDA_ARCHS="90-real;100-real"
   GIT_COMMIT=$(git rev-parse HEAD)
-  BUILD_WHEEL_ARGS="--clean --trt_root /usr/local/tensorrt --benchmarks --cuda_architectures ${CUDA_ARCHS}"
-  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:${TRT_LLM_VERSION}-arch_${CUDA_ARCHS//[^0-9]/}
+  GIT_SHOT_COMMIT=$(git rev-parse --short=7 HEAD)
+  BUILD_WHEEL_ARGS="--clean --benchmarks --cuda_architectures ${CUDA_ARCHS}"
+  IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:${TRT_LLM_VERSION}-${GIT_SHOT_COMMIT}-arch_${CUDA_ARCHS//[^0-9]/}
 else
   TRT_LLM_VERSION=25.01-trtllm-python-py3
   IMAGE_TAG=registry.cn-beijing.aliyuncs.com/devel-img/tensorrt-llm:${TRT_LLM_VERSION}

@@ -68,4 +68,4 @@ jobs:
         docker version
         docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }} ${{ env.IMAGE_ADDR }}
 
-        bash scripts/vllm/build_docker.sh 1
+        bash scripts/vllm/build_docker.sh

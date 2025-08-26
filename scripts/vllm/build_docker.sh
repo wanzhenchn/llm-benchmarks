@@ -25,15 +25,15 @@ fi
 
 VERSION=$(python3 -c "from setuptools_scm import get_version; print(get_version())")
 VERSION=$(echo "$VERSION" | sed 's/\.d[0-9]\{8\}//' | sed 's/+\(g\)\?/-/')
-cuda_arch_list="8.0 9.0"
+cuda_arch_list="9.0 10.0"
 arch=arch_$(echo $cuda_arch_list | tr -d -c 0-9)
 
 IMAGE_ADDR=registry.cn-beijing.aliyuncs.com/devel-img/vllm
 IMAGE_TAG=${VERSION}-${arch}
 
 docker build --pull \
-  --build-arg CUDA_VERSION=12.5.1 --build-arg torch_cuda_arch_list="$cuda_arch_list" \
-  --build-arg max_jobs=$max_jobs --build-arg nvcc_threads=2 \
+  --build-arg CUDA_VERSION=12.8.1 --build-arg torch_cuda_arch_list="$cuda_arch_list" \
+  --build-arg max_jobs=$max_jobs --build-arg nvcc_threads=1 \
   --build-arg RUN_WHEEL_CHECK=false \
   -t ${IMAGE_ADDR}:${IMAGE_TAG} \
   --target vllm-base -f docker/Dockerfile .

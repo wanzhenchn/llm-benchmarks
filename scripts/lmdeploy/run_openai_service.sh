@@ -25,11 +25,6 @@ service_port=$3
 # https://github.com/InternLM/lmdeploy/blob/main/docs/en/serving/api_server.md
 # https://github.com/InternLM/lmdeploy/blob/main/docs/en/serving/api_server_vl.md
 # https://github.com/InternLM/lmdeploy/blob/main/lmdeploy/cli/serve.py
-if [ ! -e "gemm_config.in" ]; then
-  echo "generate gemm_config.in now..."
-  python3 -c "from lmdeploy.turbomind.generate_gemm_config import main;\
-    main(tensor_para_size=${gpu_num}, max_batch_size=4, model_path='${model_path}')"
-fi
 
 extra_args=""
 
@@ -69,7 +64,7 @@ if [ $precision = fp16 ] || [ $precision = w4a16 ] || \
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
     --session-len 16384 \
-    --max-batch-size 256 ${extra_args} --max-log-len 0 # --chat-template '{"meta_instruction": ""}'
+    --max-batch-size 512 ${extra_args} --max-log-len 0 # --chat-template '{"meta_instruction": ""}'
 #    --enable-prefix-caching \
 
 else
