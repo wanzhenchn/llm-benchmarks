@@ -26,7 +26,8 @@ if [ $# = 5 ]; then
   extra_args=""
 
   if [ $mode = fp16 ] || [ $mode = w4a16 ] || [ $mode = kv-fp8 ] || \
-    [ $mode = fp8-kv-fp16 ] || [ $mode = fp8-kv-fp8 ] || [ $mode = fp4 ]; then
+    [ $mode = fp8-kv-fp16 ] || [ $mode = fp8-kv-fp8 ] || [ $mode = fp4 ] || \
+    [ $mode = kvcache ]; then
     if [ $mode = w4a16 ]; then
       extra_args+="--dtype half "
     fi
@@ -39,9 +40,16 @@ if [ $# = 5 ]; then
       export VLLM_USE_FLASHINFER_MOE_MXFP4_BF16=1
     fi
 
+    if [ $mode = kvcache ]; then
+
+      kv_config='{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config":{}}'
+
+      extra_args+="--kv-transfer-config "
+      extra_args+="$kv_config"
+    fi
   else
-    echo "mode only support fp16, w4a16, kv-fp8, fp8-kv-fp16, fp8-kv-fp8 and fp4"
-    exit
+    echo "mode only support fp16, w4a16, kv-fp8, fp8-kv-fp16, fp8-kv-fp8, fp4 and kvcache"
+    exit 1
   fi
 
 
@@ -56,16 +64,16 @@ if [ $# = 5 ]; then
     --host ${host_name} \
     --port $port \
     -tp ${gpu_num} \
-    --max-model-len 4096 \
+    --max-model-len 8192 \
     --max-num-seqs 256 `# How many requests can be batched into a single model run` \
     --gpu-memory-utilization 0.9 \
     --swap-space 16 `# CPU swap space size (GiB) per GPU.` \
     --trust-remote-code \
-    --disable-log-stats \
-    --disable-log-requests \
     --async-scheduling \
-    --no-enable-prefix-caching \
+    --enable-prefix-caching \
     ${extra_args}
+#    --disable-log-stats \
+#    --enable-log-requests
 #    --enforce-eager `# By default it's not eager mode, If it's not set, it uses cuda_graph`
 else
   echo "Usage1: $0 model_path mode(fp16, w4a16 or fp8-kv-fp8, fp8-kv-fp16, fp4) port device_id(0 or 0,1) engine_type(0 or 1)"

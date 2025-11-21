@@ -64,10 +64,10 @@ if [ $precision = fp16 ] || [ $precision = w4a16 ] || \
     --tp ${gpu_num} \
     --cache-max-entry-count 0.9 \
     --session-len 16384 \
-    --max-batch-size 512 ${extra_args} --max-log-len 0 # --chat-template '{"meta_instruction": ""}'
+    --max-batch-size 512 ${extra_args} --max-log-len 0 # --log-level INFO --chat-template '{"meta_instruction": ""}'
 #    --enable-prefix-caching \
 
 else
   echo "precision only support fp16, w4a16, fp16-kv-int8, fp16-kv-fp8, fp8-kv-fp16, fp8-kv-fp8"
-  exit
+  exit 1
 fi

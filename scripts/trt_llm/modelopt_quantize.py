@@ -47,6 +47,7 @@ QUANT_CFG_CHOICES = {
 }
 
 KV_QUANT_CFG_CHOICES = {
+    "none": "none",
     "fp8": "FP8_KV_CFG",
     "nvfp4": "NVFP4_KV_CFG",
 }
@@ -232,7 +233,7 @@ def quantize_model(args, model, quant_cfg, calib_dataloader=None):
 
     print("Starting quantization...")
     start_time = time.time()
-    model = mtq.quantize(model, quant_cfg, forward_loop=calibrate_loop)
+    mtq.quantize(model, quant_cfg, forward_loop=calibrate_loop)
     end_time = time.time()
     print(f"Quantization done. time used: {end_time - start_time}s")
     return model
@@ -286,6 +287,8 @@ class Export2Onellm:
         self.model = model
         self.tokenizer = tokenizer
         self.export_path = args.output_dir
+        self.kv_cache_scheme = args.kv_cache_qformat if \
+            args.kv_cache_qformat != "none" else None
 
         assert self._is_fp8(model), "Only supports FP8 OneLLM export."
 
@@ -377,7 +380,7 @@ class Export2Onellm:
                 "quantization_config", {
                     "quant_method": self.args.qformat,
                     "activation_scheme": "static",
-                    "kv_cache_scheme": 'fp8' if 'int8_sq' not in self.args.qformat else None,
+                    "kv_cache_scheme": self.kv_cache_scheme,
                     "version": "gemm"
                 }
         )
@@ -420,17 +423,22 @@ def main(args):
 
         quant_cfg = create_quant_cfg(model_type, args.qformat, args.kv_cache_qformat, args.awq_block_size)
 
-        # Only run single sample for preview
-        input_ids = next(iter(calib_dataloader))["input_ids"][0:1]
-        generated_ids_before_ptq = model.generate(input_ids, max_new_tokens=100)
+        if args.test:
+            # Only run single sample for preview
+            input_ids = next(iter(calib_dataloader))["input_ids"][0:1]
+            generated_ids_before_ptq = model.generate(input_ids, max_new_tokens=100)
 
         model = quantize_model(args, model, quant_cfg, calib_dataloader)
+        # Lets print the quantization summary
+        if args.verbose:
+            mtq.print_quant_summary(model)
 
-        # Run some samples
-        generated_ids_after_ptq = model.generate(input_ids, max_new_tokens=100)
-        print(f"\nexample test input: {tokenizer.batch_decode(input_ids)}\n\n"
-              f"outputs before {args.qformat}: {tokenizer.batch_decode(generated_ids_before_ptq[:, input_ids.shape[1]:])}\n\n"
-              f"outputs after {args.qformat} : {tokenizer.batch_decode(generated_ids_after_ptq[:, input_ids.shape[1]:])}\n")
+        if args.test:
+            # Run some samples
+            generated_ids_after_ptq = model.generate(input_ids, max_new_tokens=100)
+            print(f"\nexample test input: {tokenizer.batch_decode(input_ids)}\n\n"
+                  f"outputs before {args.qformat}: {tokenizer.batch_decode(generated_ids_before_ptq[:, input_ids.shape[1]:])}\n\n"
+                  f"outputs after {args.qformat} : {tokenizer.batch_decode(generated_ids_after_ptq[:, input_ids.shape[1]:])}\n")
 
     with torch.inference_mode():
         if model_type is None:
@@ -480,7 +488,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--qformat",
         help="Quantization format.",
-        default="fp8",
+        default="w4a8_awq",
         choices=["fp8", "int8", "int8_sq", "int4_awq", "w4a8_awq", "nvfp4"]
     )
     parser.add_argument(
@@ -488,7 +496,7 @@ if __name__ == "__main__":
         required=False,
         default="none",
         choices=["fp8", "nvfp4", "none"],
-        help="Specify KV cache quantization format, default to fp8 if not provided",
+        help="Specify KV cache quantization format, default to none if not provided",
     )
     parser.add_argument("--batch_size",
                         help="Batch size for calibration.",
@@ -497,7 +505,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         help="dataset name for quantization calibration.",
-        default="cnn_dailymail",
+        default="ultrachat_2k",
         choices=["cnn_dailymail", "ultrachat_2k", "pileval"]
     )
     parser.add_argument("--tp", type=int, default=1)
@@ -521,8 +529,15 @@ if __name__ == "__main__":
         default=True,
         action=argparse.BooleanOptionalAction,
     )
+    parser.add_argument(
+        "--test",
+        help="Run and print output before and after quantization. Disable by --no_test.",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+    )
     args = parser.parse_args()
 
     main(args)
 
-# Usage: python3 modelopt_quantize.py --model_dir <HF model> --calib_size 512 --batch_size 16 --qformat w4a8_awq --kv_cache_qformat fp8 --export_fmt hf --output_dir <output_path>
+# Usage: python3 modelopt_quantize.py --model_dir <HF model> --qformat fp8 --calib_size 512 --export_fmt onellm --output_dir <output_path>
+#        python3 modelopt_quantize.py --model_dir <HF model> --calib_size 512 --batch_size 16 --qformat w4a8_awq --export_fmt hf --output_dir <output_path>
