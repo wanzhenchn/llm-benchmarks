@@ -45,6 +45,8 @@ def display_performance_table(csv_file: str):
     table.add_column('TPS (toks/s)', justify='center', style=styles['good'])
     table.add_column('RPS (req/s)', justify='center')
     table.add_column('Decode TPS (tps/usr)', justify='center')
+    table.add_column('Prefix Cache Hit Rate', justify='center')
+    table.add_column('External Prefix Cache Hit Rate', justify='center')
     table.add_column('GPU UTIL', justify='center')
     table.add_column('TENSOR Active', justify='center')
     table.add_column('SM Active', justify='center')
@@ -74,11 +76,13 @@ def display_performance_table(csv_file: str):
                     str(int(row.iloc[14])), # Token Throughput
                     str(row.iloc[15]), # Service Throughput
                     str(int(row.iloc[16])), # Decode Token Throughput
-                    str(row.iloc[17]), # GPU UTIL
-                    str(row.iloc[19]), # Tensor Active
-                    str(row.iloc[20]), # SM Active
-#                    str(row.iloc[23]), # Request Rate
-#                    str(row.iloc[24]), # Burstiness
+                    str(row.iloc[17]), # Prefix Cache Hit Rate
+                    str(row.iloc[18]), # External Prefix Cache Hit Rate
+                    str(row.iloc[19]), # GPU UTIL
+                    str(row.iloc[21]), # Tensor Active
+                    str(row.iloc[22]), # SM Active
+#                    str(row.iloc[25]), # Request Rate
+#                    str(row.iloc[26]), # Burstiness
                 )
             except ValueError as e:
                 console.print(

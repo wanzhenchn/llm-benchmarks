@@ -56,6 +56,8 @@ class BenchmarkMetrics:
     sm_active: float
     sm_occupancy: float
     dram_active: float
+    prefix_cache_hit_rate: float = 0.0
+    external_prefix_cache_hit_rate: float = 0.0
 
 
 def download_image(url:str, cache_dir:str="image_cache", retry:int=3):
@@ -241,6 +243,7 @@ async def get_request(
 def calculate_metrics(outputs: List[RequestFuncOutput],
                       dur_s: float,
                       gpu_metrics: dict,
+                      llm_metrics: dict = None,
                       ) -> Tuple[BenchmarkMetrics, List[int]]:
     actual_output_lens = []
     total_input = 0
@@ -275,6 +278,16 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
     assert completed > 0, f"The number of requests that returned successfully " \
         f"is {completed}. Please check the service logs to further diagnose the issue."
 
+    pc_hit_rate = 0.0
+    external_pc_hit_rate = 0.0
+
+    if llm_metrics:
+        from metrics import process_llm_metrics
+
+        cache_metrics = process_llm_metrics(llm_metrics)
+        pc_hit_rate = cache_metrics.get('prefix_cache_hit_rate', 0.0)
+        external_pc_hit_rate = cache_metrics.get('external_prefix_cache_hit_rate', 0.0)
+
     metrics = BenchmarkMetrics(
         completed=completed,
         total_input=total_input,
@@ -307,6 +320,9 @@ def calculate_metrics(outputs: List[RequestFuncOutput],
         sm_active=np.mean(gpu_metrics['sm_active'][3:-2] if gpu_metrics else 0),
         sm_occupancy=np.mean(gpu_metrics['sm_occupancy'][3:-2] if gpu_metrics else 0),
         dram_active=np.mean(gpu_metrics['dram_active'][3:-2] if gpu_metrics else 0),
+        # LLM specific metrics
+        prefix_cache_hit_rate=pc_hit_rate,
+        external_prefix_cache_hit_rate=external_pc_hit_rate,
     )
 
     return metrics, actual_output_lens
@@ -380,6 +396,7 @@ async def warmup(model_id: str,
 
 async def benchmark(api_url: str,
                     model_id: str,
+                    backend: str,
                     request_func: Callable,
                     max_concurrency: int,
                     input_requests: List[Tuple[str, int]],
@@ -397,7 +414,11 @@ async def benchmark(api_url: str,
                     get_gpu_metrics_freq: int,
                     device_ids: str,
                     request_rate: float,
-                    burstiness: float):
+                    burstiness: float,
+                    get_llm_metrics: bool = False,
+                    llm_metrics_url: str = 'http://localhost:8000/metrics',
+                    llm_metrics_freq: int = 10,
+                    ):
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
     semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
@@ -421,6 +442,16 @@ async def benchmark(api_url: str,
         gpu_metrics_task = asyncio.create_task(
             get_metrics(device_ids, get_gpu_metrics_freq, stop_event))
 
+    # start LLM metrics collection
+    if get_llm_metrics:
+        from metrics import get_llm_metrics_periodically
+
+        metrics_stop_event = asyncio.Event()
+        llm_metrics_task = asyncio.create_task(
+            get_llm_metrics_periodically(
+                llm_metrics_url, llm_metrics_freq, metrics_stop_event, backend)
+        )
+
     outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
 
     benchmark_duration = time.perf_counter() - benchmark_start_time
@@ -430,13 +461,19 @@ async def benchmark(api_url: str,
         stop_event.set()
         gpu_metrics = await gpu_metrics_task
 
+    llm_metrics = None
+    if get_llm_metrics:
+        metrics_stop_event.set()
+        llm_metrics = await llm_metrics_task
+
     if not disable_tqdm:
         pbar.close()
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
         dur_s=benchmark_duration,
-        gpu_metrics=gpu_metrics
+        gpu_metrics=gpu_metrics,
+        llm_metrics=llm_metrics
     )
 
     logging.info(f'\n{"-" * 50}\n'
@@ -466,6 +503,11 @@ async def benchmark(api_url: str,
               "Service Throughput (req/s)": round(metrics.request_throughput, 2),
               "Decode Token Throughput (token/user/s)": round(
                   metrics.decode_throughtput_per_user, 2),
+              # LLM metrics
+              "Prefix Cache Hit Rate": round(metrics.prefix_cache_hit_rate, 3),
+              "External Prefix Cache Hit Rate": round(
+                  metrics.external_prefix_cache_hit_rate, 3),
+              # GPU metrics
               "GPU UTIL": round(metrics.gpu_util, 1),
               "GPU Mem (MB)": round(metrics.gpu_mem, 2),
               "Tensor Active": round(metrics.tensor_active, 2),
@@ -497,6 +539,7 @@ async def benchmark(api_url: str,
                  "Latency_P99 (ms),Latency_AVG (ms)," \
                  "Token Throughput (token/s),Service Throughput (req/s)," \
                  "Decode Token Throughput (token/user/s)," \
+                 "Prefix Cache Hit Rate,External Prefix Cache Hit Rate," \
                  "GPU UTIL,GPU Mem (MB),Tensor Active,SM Active,SM Occupancy,DRAM Active," \
                  "Request Rate,Burstiness\n"
         del result["Inter_Token_Latency_AVG (ms)"]
@@ -541,6 +584,8 @@ def main(host: str = "localhost",
          get_gpu_metrics: bool = False,
          get_gpu_metrics_freq: int = 10,
          device_ids: str = "0,1,2,3",
+         get_llm_metrics: bool = False,
+         llm_metrics_freq: int = 10,
          ):
     logging.basicConfig(
         level=logging.INFO,
@@ -553,22 +598,25 @@ def main(host: str = "localhost",
         return str(value).lower() == 'true'
 
     args = [enable_expand_dataset, trust_remote_code, disable_tqdm,
-            save_result, debug_result, get_gpu_metrics]
+            save_result, debug_result, get_gpu_metrics, get_llm_metrics]
     enable_expand_dataset, trust_remote_code, disable_tqdm, save_result, \
-        debug_result, get_gpu_metrics = map(to_bool, args)
+        debug_result, get_gpu_metrics, get_llm_metrics = map(to_bool, args)
 
-    if "0.0.0.0" in host:
+    if "0.0.0.0" in host or "localhost" in host:
         api_url = f"http://{host}:{port}{endpoint}"
         api_url_available_models = f"http://{host}:{port}/v1/models"
+        llm_metrics_url = f"http://{host}:{port}/metrics"
     else:
         if host.endswith('/'):
             host = host[:-1]
         api_url = f"http://{host}{endpoint}"
         api_url_available_models = f"http://{host}/v1/models"
+        llm_metrics_url = f"http://{host}/metrics"
 
     response = requests.get(api_url_available_models)
     if response.status_code == 200:
         model_id = response.json()['data'][0]['id']
+        backend = response.json()['data'][0]['owned_by']
     else:
         raise ValueError(f"Error ({response.reason}) response from {api_url_available_models} "
                          f"to get model id informations.")
@@ -601,6 +649,7 @@ def main(host: str = "localhost",
     asyncio.run(
         benchmark(api_url=api_url,
                   model_id=model_id,
+                  backend=backend,
                   request_func=request_func,
                   max_concurrency=batch_size,
                   input_requests=expand_input_requests,
@@ -618,7 +667,11 @@ def main(host: str = "localhost",
                   get_gpu_metrics_freq=get_gpu_metrics_freq,
                   device_ids=device_ids,
                   request_rate=request_rate,
-                  burstiness=burstiness)
+                  burstiness=burstiness,
+                  get_llm_metrics=get_llm_metrics,
+                  llm_metrics_url=llm_metrics_url,
+                  llm_metrics_freq=llm_metrics_freq
+                  )
     )
 
 

@@ -146,7 +146,8 @@ function profile()
       --enable_expand_dataset true \
       --get_gpu_metrics ${get_gpu_metrics} \
       --get_gpu_metrics_freq 5 \
-      --device_ids "${monitor_device_ids}"
+      --device_ids "${monitor_device_ids}" \
+      --get_llm_metrics true
 }
 
 
