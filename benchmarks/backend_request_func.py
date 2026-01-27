@@ -220,14 +220,18 @@ async def async_request_openai_chat_completions(
     ), "OpenAI Chat Completions API URL must end with 'chat/completions'."
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        content = [{"type": "text", "text": request_func_input.prompt}]
-        if request_func_input.multi_modal_content:
-            content.extend(request_func_input.multi_modal_content)
+        if isinstance(request_func_input.prompt, list):
+            messages = request_func_input.prompt
+        else:
+            content = [{"type": "text", "text": request_func_input.prompt}]
+            if request_func_input.multi_modal_content:
+                content.extend(request_func_input.multi_modal_content)
+            messages = [
+                {"role": "user", "content": content},
+            ]
         payload = {
             "model": request_func_input.model,
-            "messages": [
-                {"role": "user", "content": content},
-            ],
+            "messages": messages,
             "max_tokens": request_func_input.request_output_len,
             "stream": True,
             "stream_options": {
