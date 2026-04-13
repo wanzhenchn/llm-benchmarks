@@ -225,7 +225,15 @@ async def async_request_openai_chat_completions(
         else:
             content = [{"type": "text", "text": request_func_input.prompt}]
             if request_func_input.multi_modal_content:
-                content.extend(request_func_input.multi_modal_content)
+                mm_content = request_func_input.multi_modal_content
+                if isinstance(mm_content, list):
+                    content.extend(mm_content)
+                elif isinstance(mm_content, dict):
+                    content.append(mm_content)
+                else:
+                    raise TypeError(
+                        "multi_modal_content must be a dict or list[dict] for openai-chat"
+                    )
             messages = [
                 {"role": "user", "content": content},
             ]
@@ -265,7 +273,12 @@ async def async_request_openai_chat_completions(
                         if not chunk:
                             continue
 
-                        chunk = remove_prefix(chunk.decode("utf-8"), "data: ")
+                        chunk = chunk.decode("utf-8")
+                        if chunk.startswith(":"):
+                            continue
+
+                        chunk = remove_prefix(chunk, "data: ")
+
                         if chunk != "[DONE]":
                             timestamp = time.perf_counter()
                             data = json.loads(chunk)
