@@ -4,6 +4,7 @@
 # @Details  : benchmark script
 ################################################################################
 
+import ast
 import json
 import os
 import random
@@ -14,12 +15,13 @@ import logging
 from dataclasses import dataclass
 import base64
 from PIL import Image
-from typing import List, Tuple, Optional, Callable, Any, Union, AsyncGenerator
+from typing import List, Tuple, Optional, Callable, Any, Union, AsyncGenerator, Dict
 import numpy as np
 import pandas as pd
 import tabulate
 import fire
 from tqdm.asyncio import tqdm
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
                                   RequestFuncOutput)
@@ -140,18 +142,143 @@ def expand_dataset(input_requests: List[Tuple[str, Union[List[dict], None]]],
     return expand_input_requests
 
 
-def read_dataset(dataset_name: str,
-                 dataset_path: str) -> List[Tuple[str, None]]:
+def gen_output_lens(expand_input_requests, request_output_len, output_range_ratio):
+    # 生成output_len的正态分布数组
+    num_requests = len(expand_input_requests)
+    if output_range_ratio > 0:
+        output_std = request_output_len * output_range_ratio
+        output_lens = np.random.normal(loc=request_output_len, scale=output_std, size=num_requests)
+        min_output = max(1, int(request_output_len - 3 * output_std))
+        max_output = int(request_output_len + 3 * output_std)
+        output_lens = np.clip(output_lens, min_output, max_output).astype(int).tolist()
+        logging.info(f"Target output_len: {request_output_len}, Sampling from [{min_output}, {max_output}]")
+    else:
+        logging.info(f"Target output_len: {request_output_len}")
+        output_lens = [request_output_len] * num_requests
+    return output_lens
+
+
+def generate_random_dataset(tokenizer,
+                           num_requests: int = 200,
+                           input_len: int = 634,
+                           range_ratio: float = 0.0,
+                           prefix_len: int = 0,
+                           seed: int = 42,
+                           vocab_limit: int = 20000) -> List[Tuple[str, None]]:
+    """生成RandomDataset用于性能测试
+    Args:
+        tokenizer: 真实的tokenizer对象
+        num_requests: 请求数量
+        input_len: 输入token长度
+        range_ratio: 长度变化范围比例
+        prefix_len: 前缀长度
+        seed: 随机种子
+        vocab_limit: 限制使用的词汇表大小
+    """
+    # Enforce range_ratio < 1
+    assert range_ratio < 1.0, (
+        "range_ratio must be < 1.0 to ensure a valid sampling range"
+    )
+
     start = time.perf_counter()
-    # for ShareGPT dataset
+    np.random.seed(seed)
+    random.seed(seed)
+
+    # 使用真实tokenizer的词汇表大小
+    full_vocab_size = tokenizer.vocab_size
+    # 限制vocab_size到指定数量的token（通常是最常用的token）
+    vocab_size = min(full_vocab_size, vocab_limit)
+    num_special_tokens = tokenizer.num_special_tokens_to_add()
+    real_input_len = input_len - num_special_tokens
+
+    # 计算长度采样范围 - 新的采样逻辑: [X * (1 - b), X * (1 + b)]
+    input_low = int(real_input_len * (1 - range_ratio))
+    input_high = int(real_input_len * (1 + range_ratio))
+
+    # 添加调试日志
+    logging.info(f"Target input_len: {real_input_len}, Sampling from [{input_low}, {input_high}]")
+    logging.info(f"Using tokenizer full_vocab_size: {full_vocab_size}, limited to: {vocab_size}")
+
+    # 生成前缀token
+    prefix_token_ids = (
+        np.random.randint(0, vocab_size, size=prefix_len).tolist()
+        if prefix_len > 0 else []
+    )
+
+    # 为每个请求采样长度
+    if range_ratio > 0:
+        # 使用正态分布，标准差设为目标长度的 range_ratio 倍
+        std_dev = real_input_len * range_ratio
+        input_lens = np.random.normal(loc=real_input_len, scale=std_dev, size=num_requests)
+        min_len = max(1, int(real_input_len - 3 * std_dev))
+        max_len = int(real_input_len + 3 * std_dev)
+        input_lens = np.clip(input_lens, min_len, max_len).astype(int)
+    else:
+        # 如果range_ratio=0，使用固定长度
+        input_lens = np.full(num_requests, real_input_len, dtype=int)
+    offsets = np.random.randint(0, vocab_size, size=num_requests)
+
+    input_requests = []
+    for i in range(num_requests):
+        # 生成内部token序列
+        inner_seq = (
+            (offsets[i] + i + np.arange(input_lens[i])) % vocab_size
+        ).tolist()
+        token_sequence = prefix_token_ids + inner_seq
+
+        # 使用真实tokenizer解码
+        prompt = tokenizer.decode(token_sequence)
+
+        # 重新编码和解码以确保长度一致性
+        # 这是因为某些情况下N个连续token解码的字符串再次tokenize可能不等于N个token
+        # 例如对于GPT2Tokenizer: [6880, 6881] -> ['Ġcalls', 'here'] -> [1650, 939, 486] -> ['Ġcall', 'sh', 'ere']
+        # 为了避免不受控的prompt长度变化，编码序列在再次解码前被截断
+        total_input_len = prefix_len + int(input_lens[i])
+        re_encoded_sequence = tokenizer.encode(prompt, add_special_tokens=False)[:total_input_len]
+        prompt = tokenizer.decode(re_encoded_sequence)
+
+        input_requests.append((prompt, None))
+
+    elapsed = time.perf_counter() - start
+    logging.info(f'Generated {num_requests} random requests in {round(elapsed, 2)}s')
+    logging.info(f'(RandomDataset) Requests #dataset: {len(input_requests)}')
+
+    return input_requests
+
+
+def read_dataset(dataset_name: str,
+                 dataset_path: str,
+                 tokenizer: Optional[PreTrainedTokenizerBase] = None,
+                 # RandomDataset parameters
+                 num_requests: int = 1000,
+                 input_len: int = 1024,
+                 range_ratio: float = 0.0,
+                 prefix_len: int = 0,
+                 seed: int = 42,
+                 vocab_limit: int = 20000) -> List[Tuple[str, None]]:
+    start = time.perf_counter()
     if dataset_name is not None:
-        assert dataset_name == "sharegpt", "Only support the ShareGPT dataset"
-        with open(dataset_path, 'r', encoding='utf-8') as f:
-            prompts = json.load(f)
-        # Filter out the conversations with less than 2 turns.
-        dataset = [data for data in prompts
-                   if len(data["conversations"]) >= 2]
-        prompts = [data["conversations"][0]["value"] for data in dataset]
+        if dataset_name == "random":
+            if tokenizer is None:
+                raise ValueError("Tokenizer is required for RandomDataset generation")
+            return generate_random_dataset(
+                tokenizer=tokenizer,
+                num_requests=num_requests,
+                input_len=input_len,
+                range_ratio=range_ratio,
+                prefix_len=prefix_len,
+                seed=seed,
+                vocab_limit=vocab_limit
+            )
+        else:
+            # for ShareGPT dataset
+            assert dataset_name == "sharegpt", "Only support the ShareGPT dataset"
+            with open(dataset_path, 'r', encoding='utf-8') as f:
+                prompts = json.load(f)
+            # Filter out the conversations with less than 2 turns.
+            dataset = [data for data in prompts
+                    if len(data["conversations"]) >= 2]
+            prompts = [data["conversations"][0]["value"] for data in dataset]
     else:
         if dataset_path.endswith("csv"):
             df = pd.read_csv(dataset_path, index_col=None)
@@ -400,7 +527,7 @@ async def benchmark(api_url: str,
                     request_func: Callable,
                     max_concurrency: int,
                     input_requests: List[Tuple[str, int]],
-                    req_output_len: int,
+                    req_output_lens: List[int],
                     top_k: int,
                     top_p: float,
                     repetition_penalty: float,
@@ -424,8 +551,11 @@ async def benchmark(api_url: str,
     semaphore = asyncio.Semaphore(max_concurrency)  # Semaphore to limit concurrency
     benchmark_start_time = time.perf_counter()
 
+    req_output_lens_iter = iter(req_output_lens)
+
     tasks = []
     async for prompt, mm_content in get_request(input_requests, request_rate, burstiness):
+        req_output_len = next(req_output_lens_iter)
         tasks.append(
             asyncio.create_task(
                 process(semaphore, api_url, model_id, prompt, mm_content,
@@ -564,7 +694,7 @@ def main(host: str = "localhost",
          port: int = 8000,
          model_type: str = "llm",
          endpoint: str = "/v1/chat/completions",
-         dataset_name: str = 'sharegpt',
+         dataset_name: str = 'random',
          dataset_path: str = None,
          enable_expand_dataset: bool = False,
          batch_size: int = 1,
@@ -573,7 +703,7 @@ def main(host: str = "localhost",
          top_p: float = 0.95,
          temperature: float = 0.01,
          repetition_penalty: float = 1.15,
-         extra_body: Optional[dict] = None,
+         extra_body: Optional[Union[dict, str]] = None,
          trust_remote_code: bool = True,
          disable_tqdm: bool = False,
          request_rate: float = float('inf'),
@@ -586,6 +716,16 @@ def main(host: str = "localhost",
          device_ids: str = "0,1,2,3",
          get_llm_metrics: bool = False,
          llm_metrics_freq: int = 10,
+         # Tokenizer参数
+         model_name_or_path: str = None,
+         # RandomDataset参数
+         num_requests: int = 1000,
+         input_len: int = 1024,
+         range_ratio: float = 0.0,
+         output_range_ratio: float = 0.0,
+         prefix_len: int = 0,
+         seed: int = 42,
+         vocab_limit: int = 20000
          ):
     logging.basicConfig(
         level=logging.INFO,
@@ -597,10 +737,45 @@ def main(host: str = "localhost",
     def to_bool(value):
         return str(value).lower() == 'true'
 
+    #convert request_rate to float type
+    def to_float_or_inf(value):
+        if isinstance(value, str):
+            if value.lower() == 'inf' or value.lower() == 'infinity':
+                return float('inf')
+            else:
+                return float(value)
+        return float(value)
+
+    def parse_extra_body(value: Optional[Union[Dict, str]]) -> Optional[Dict]:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, str):
+            raise TypeError(f"extra_body must be dict, str, or None, got {type(value)}")
+        s = value.strip()
+        if s.lower() in ("", "none", "null"):
+            return None
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            pass
+        try:
+            return ast.literal_eval(s)
+        except (ValueError, SyntaxError) as e:
+            raise ValueError(
+                "Could not parse extra_body: use JSON (true/false) or a Python literal dict (True/False), "
+                "with ASCII commas. Examples: '{\"ignore_eos\": true}' or \"{'ignore_eos': True}\""
+            ) from e
+
     args = [enable_expand_dataset, trust_remote_code, disable_tqdm,
             save_result, debug_result, get_gpu_metrics, get_llm_metrics]
     enable_expand_dataset, trust_remote_code, disable_tqdm, save_result, \
         debug_result, get_gpu_metrics, get_llm_metrics = map(to_bool, args)
+
+    request_rate = to_float_or_inf(request_rate)
+    burstiness = to_float_or_inf(burstiness)
+    extra_body = parse_extra_body(extra_body)
 
     if "0.0.0.0" in host or "localhost" in host:
         api_url = f"http://{host}:{port}{endpoint}"
@@ -621,11 +796,35 @@ def main(host: str = "localhost",
         raise ValueError(f"Error ({response.reason}) response from {api_url_available_models} "
                          f"to get model id informations.")
 
+        # 加载tokenizer（仅在需要RandomDataset时）
+    tokenizer = None
+    if dataset_name == "random":
+        # 确定tokenizer路径优先级：model_name_or_path > model_id > gpt2
+        tokenizer_path = model_name_or_path or model_id
+
+        try:
+            # 严格使用模型匹配的tokenizer，不使用fallback
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=trust_remote_code)
+            logging.info(f"Loaded tokenizer from: {tokenizer_path}")
+        except Exception as e:
+            raise ValueError(f"Failed to load tokenizer from {tokenizer_path}: {e}. "
+                           f"Please ensure the model path is correct and the tokenizer is available.")
+
     if model_type == "vlm":
         input_requests = read_vlm_dataset(dataset_name, dataset_path,
                                           use_base64=True)
     elif model_type == "llm":
-        input_requests = read_dataset(dataset_name, dataset_path)
+        input_requests = read_dataset(
+            dataset_name=dataset_name,
+            dataset_path=dataset_path,
+            tokenizer=tokenizer,
+            num_requests=num_requests,
+            input_len=input_len,
+            range_ratio=range_ratio,
+            prefix_len=prefix_len,
+            seed=seed,
+            vocab_limit=vocab_limit
+        )
     else:
         assert model_type in ["vlm", "llm"], f"{model_type} not in [llm, vlm]"
 
@@ -639,40 +838,44 @@ def main(host: str = "localhost",
     else:
         request_func = ASYNC_REQUEST_FUNCS.get("openai")
 
+    request_output_lens = gen_output_lens(expand_input_requests, request_output_len, output_range_ratio)
+
+    benchmark_args = dict(
+        api_url=api_url,
+        model_id=model_id,
+        backend=backend,
+        request_func=request_func,
+        max_concurrency=batch_size,
+        input_requests=expand_input_requests,
+        req_output_lens=request_output_lens,
+        top_k=top_k,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+        temperature=temperature,
+        extra_body=extra_body,
+        disable_tqdm=disable_tqdm,
+        save_result=save_result,
+        debug_result=debug_result,
+        log_path=log_path,
+        get_gpu_metrics=get_gpu_metrics,
+        get_gpu_metrics_freq=get_gpu_metrics_freq,
+        device_ids=device_ids,
+        request_rate=request_rate,
+        burstiness=burstiness,
+        get_llm_metrics=get_llm_metrics,
+        llm_metrics_url=llm_metrics_url,
+        llm_metrics_freq=llm_metrics_freq
+    )
+
     # warmup
     _ = asyncio.run(
         warmup(model_id=model_id, api_url=api_url, request_func=request_func,
-               max_concurrency=batch_size, input_requests=input_requests)
+               max_concurrency=batch_size, input_requests=input_requests,
+               extra_body=extra_body)
     )
 
     # run benchmark
-    asyncio.run(
-        benchmark(api_url=api_url,
-                  model_id=model_id,
-                  backend=backend,
-                  request_func=request_func,
-                  max_concurrency=batch_size,
-                  input_requests=expand_input_requests,
-                  req_output_len=request_output_len,
-                  top_k=top_k,
-                  top_p=top_p,
-                  repetition_penalty=repetition_penalty,
-                  temperature=temperature,
-                  extra_body=extra_body,
-                  disable_tqdm=disable_tqdm,
-                  save_result=save_result,
-                  debug_result=debug_result,
-                  log_path=log_path,
-                  get_gpu_metrics=get_gpu_metrics,
-                  get_gpu_metrics_freq=get_gpu_metrics_freq,
-                  device_ids=device_ids,
-                  request_rate=request_rate,
-                  burstiness=burstiness,
-                  get_llm_metrics=get_llm_metrics,
-                  llm_metrics_url=llm_metrics_url,
-                  llm_metrics_freq=llm_metrics_freq
-                  )
-    )
+    asyncio.run(benchmark(**benchmark_args))
 
 
 if __name__ == "__main__":
